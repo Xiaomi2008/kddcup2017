@@ -7,6 +7,10 @@ class time_recod_data():
 	def __init__(self):
 		self.link_tt={}
 		self.car_traj_time={}
+	def zero_init(self,link_ids):
+		for l_id in link_ids:
+			self.link_tt[l_id] =[]
+			# self.link_tt(link_ids)
 class kdd_data():
 	def __init__(self):
 		self.time_interval = 20 # 10 minutes interaval
@@ -14,7 +18,37 @@ class kdd_data():
 		vol_file =path+'volume(table 6)_training'+file_suffix
 		weathre_file =path +'weather (table 7)_test1'+file_suffix
 		traj_data,vol_data=self.load_data(time_file,vol_file)
-		self.travel_times=self.get_features(traj_data,vol_data)
+		travel_times=self.format_data_in_timeInterval(traj_data,vol_data)
+		self.travel_times =self.insert_empty_time_info(travel_times)
+	def insert_empty_time_info(self,travel_times):
+		# 1. find min start time and max end time across all roud_ids
+		start_time = datetime(1900,1,1,1,0)
+		end_time  =datetime(3000,1,1,1,0)
+		for r_id in travel_times.keys():
+			time_windows  =list(travel_times[r_id].keys())
+			time_windows.sort()
+			start_time = time_windows[0] if start_time > time_windows[0] else start_time
+			end_time = time_windows[-1] if end_time < time_windows[-1] else end_time
+		current_time = start_time
+
+		# 2 . get all routes link ids
+		link_tt_ids={}
+		for rd_ids in travel_times.keys():
+			first_time =  next(iter(travel_times[rd_ids]))
+			link_tt_ids[rd_ids]=list(travel_times[rd_ids][first_time].link_tt.keys())
+
+		while current_time <= end_time:
+			for r_id in travel_times.keys():
+				time_windows  =list(travel_times[r_id].keys())
+				if current_time not in time_windows:
+					t_record =time_recod_data()
+					t_record.zero_init(link_tt_ids[rd_ids])
+					travel_times[r_id][current_time] =t_record
+			current_time+=timedelta(minutes=self.time_interval)
+		return travel_times
+
+
+
 	def load_data(self,time_file,vol_file):
 		# Step 1: Load trajectories
 		fr = open(time_file, 'r')
@@ -59,8 +93,12 @@ class kdd_data():
 		for id in link_ids:
 			value=time_recod.link_tt[id]
 			link_count.append(len(value))
-			link_mean.append(np.mean(value))
-			link_std.append(np.std(value))
+			if len(value) == 0:
+				link_mean.append(0)
+				link_std.append(0)
+			else:
+				link_mean.append(np.mean(value))
+				link_std.append(np.std(value))
 		vector =[v_count,ave_time_mean,ave_time_std] + link_count+link_mean+link_std
 		return vector
 		# for key, value in time_recod.link_tt.iteritems():
@@ -71,7 +109,7 @@ class kdd_data():
 
 
 
-	def get_features(self,traj_data,vol_data):
+	def format_data_in_timeInterval(self,traj_data,vol_data):
 		travel_times={}
 		print len(traj_data)
 		for i in range(len(traj_data)):
