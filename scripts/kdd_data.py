@@ -1,6 +1,11 @@
 import math
 from datetime import datetime,timedelta
 import numpy as np
+import autosklearn.regression
+import sklearn.cross_validation
+import sklearn.metrics
+from sklearn import linear_model
+from sklearn.cross_validation import cross_val_predict
 file_suffix = '.csv'
 path = '../../kdd_cup_data/dataSets/training/'  # set the data directory
 class time_recod_data():
@@ -84,29 +89,41 @@ class kdd_data():
 		len_time_windows_hours 		= 	math.floor((X_train_hourse+prediction_hourse)*60/prediction_interval_minutes)
 		len_f =len(time_features)
 		sample_n =len_f-len_time_windows_hours+1
-		lx =len(time_features[0])
-		print (lx)
+		# lx =len(time_features[0])
+		# print (X_predict_n)
+		lx =27#len(time_features[0])
+		# print (lx)
+		# print (lx)
 		X_train =np.zeros((sample_n, int(lx*X_predict_n)))
+		Y_train =np.zeros((sample_n, int(Y_predict_n)))
 		# Y_train =np.zeros(sample_n,Y_predict_n)
 		# X_train =[]
-		Y_train =[]
+		# Y_train =[]
 		for l in range(sample_n):
 			X=[]
 			Y=[]
 			for i in range(X_predict_n):
 				# X.append(time_features[l+i])
-				X+=time_features[l+i]
-				print (len(time_features[l+i]))
+				if len(time_features[l+i]) ==27:
+					X+=time_features[l+i]
+					print('1')
+				else:
+					X+=[0]*27
+					print('2')
+				# print (len(time_features[l+i]))
 			for y in range(Y_predict_n):
 				Y.append(time_features[l+X_predict_n+y][1])
+			x_n =np.array(X)
+			# print (x_n.shape)
+			# print (X)
 			X_train[l,:]=np.array(X)
 			# X_train.append(np.array(X))
-			Y_train.append(Y)
+			Y_train[l,:]=np.array(Y)
 		# X_return = np.array(X_train)
 		# Y_return = np.array(Y_train)
 		# import ipdb
 		# ipdb.set_trace()
-		return X_train, np.array(Y_train)
+		return X_train, Y_train
 		# return np.array(X_train), np.array(Y_train)
 
 
@@ -189,6 +206,11 @@ route_time_windows.sort()
 # print route_time_windows[0:60]
 mat =A.get_feature_matrix(A.travel_times,'C-3')
 X_train,Y_train =A.prepare_train_data(mat)
+# autor=autosklearn.regression.AutoSklearnRegressor()
+# autor.fit(X_train,Y_train)
+clf = linear_model.MultiTaskLasso(alpha=0.1,max_iter=5000)
+clf.fit(X_train,Y_train)
+clf.score(X_train,Y_train)
 
 
 
