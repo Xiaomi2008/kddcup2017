@@ -21,9 +21,9 @@ class kdd_data():
 		travel_times=self.format_data_in_timeInterval(traj_data,vol_data)
 		self.travel_times =self.insert_empty_time_info(travel_times)
 	def insert_empty_time_info(self,travel_times):
-		# 1. find min start time and max end time across all roud_ids
-		start_time = datetime(1900,1,1,1,0)
-		end_time  =datetime(3000,1,1,1,0)
+		# 1. find min start-time and max-end time across all roud_ids
+		start_time = datetime(2100,1,1,1,0)
+		end_time  =datetime(1900,1,1,1,0)
 		for r_id in travel_times.keys():
 			time_windows  =list(travel_times[r_id].keys())
 			time_windows.sort()
@@ -45,6 +45,7 @@ class kdd_data():
 					t_record.zero_init(link_tt_ids[rd_ids])
 					travel_times[r_id][current_time] =t_record
 			current_time+=timedelta(minutes=self.time_interval)
+			print current_time
 		return travel_times
 
 
@@ -80,8 +81,12 @@ class kdd_data():
 	def convert_windowInfo_to_vector(self,time_recod):
 		V=time_recod.car_traj_time.values()
 		v_count =len(V)
-		ave_time_mean =sum(V)/float(v_count)
-		ave_time_std  =np.std(V)
+		if v_count >0:
+			ave_time_mean =np.mean(V) #sum(V)/float(v_count)
+			ave_time_std  =np.std(V)
+		else:
+			ave_time_mean =0
+			ave_time_std  =0
 		# python 3.x
 		# for key, values in  time_recod.link_tt.items():
 		# python 2.7
