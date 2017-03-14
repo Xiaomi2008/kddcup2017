@@ -19,8 +19,8 @@ class kdd_data():
 		weathre_file =path +'weather (table 7)_test1'+file_suffix
 		traj_data,vol_data=self.load_data(time_file,vol_file)
 		travel_times=self.format_data_in_timeInterval(traj_data,vol_data)
-		self.travel_times =self.insert_empty_time_info(travel_times)
-	def insert_empty_time_info(self,travel_times):
+		self.travel_times =self.zerofill_missed_time_info(travel_times)
+	def zerofill_missed_time_info(self,travel_times):
 		# 1. find min start-time and max-end time across all roud_ids
 		start_time = datetime(2100,1,1,1,0)
 		end_time  =datetime(1900,1,1,1,0)
@@ -45,7 +45,7 @@ class kdd_data():
 					t_record.zero_init(link_tt_ids[rd_ids])
 					travel_times[r_id][current_time] =t_record
 			current_time+=timedelta(minutes=self.time_interval)
-			print current_time
+			print (current_time)
 		return travel_times
 
 
@@ -63,30 +63,63 @@ class kdd_data():
 		fr.close()
 		return traj_data, vol_data
 
-	def get_train_data(self,travel_times_struct,route_id):
+	def get_feature_matrix(self,travel_times_struct,route_id):
 		D=travel_times_struct[route_id]
-		# print type(D)
 		# import ipdb
 		# ipdb.set_trace()
 		time_windows =list(D.keys())
 		time_windows.sort()
 		mat=[]
-		vect=self.convert_windowInfo_to_vector(D[time_windows[0]])
-		# print len(vect)
 		for t_w in time_windows:
 			vect=self.convert_windowInfo_to_vector(D[t_w])
 			mat.append(vect)
 			# print vect
 		return mat
+	def prepare_train_data(self,time_features):
+		X_train_hourse 				=	2
+		prediction_hourse 			=	2
+		prediction_interval_minutes =	self.time_interval
+		X_predict_n                 =   math.floor(X_train_hourse*60/self.time_interval)
+		Y_predict_n            		= 	math.floor(prediction_hourse*60 /prediction_interval_minutes)
+		len_time_windows_hours 		= 	math.floor((X_train_hourse+prediction_hourse)*60/prediction_interval_minutes)
+		len_f =len(time_features)
+		sample_n =len_f-len_time_windows_hours+1
+		lx =len(time_features[0])
+		print (lx)
+		X_train =np.zeros((sample_n, int(lx*X_predict_n)))
+		# Y_train =np.zeros(sample_n,Y_predict_n)
+		# X_train =[]
+		Y_train =[]
+		for l in range(sample_n):
+			X=[]
+			Y=[]
+			for i in range(X_predict_n):
+				# X.append(time_features[l+i])
+				X+=time_features[l+i]
+				print (len(time_features[l+i]))
+			for y in range(Y_predict_n):
+				Y.append(time_features[l+X_predict_n+y][1])
+			X_train[l,:]=np.array(X)
+			# X_train.append(np.array(X))
+			Y_train.append(Y)
+		# X_return = np.array(X_train)
+		# Y_return = np.array(Y_train)
+		# import ipdb
+		# ipdb.set_trace()
+		return X_train, np.array(Y_train)
+		# return np.array(X_train), np.array(Y_train)
+
+
 	def convert_windowInfo_to_vector(self,time_recod):
-		V=time_recod.car_traj_time.values()
+		V=list(time_recod.car_traj_time.values())
+		# print (type(V))
 		v_count =len(V)
 		if v_count >0:
-			ave_time_mean =np.mean(V) #sum(V)/float(v_count)
-			ave_time_std  =np.std(V)
+			time_mean =np.mean(V) #sum(V)/float(v_count)
+			time_std  =np.std(V)
 		else:
-			ave_time_mean =0
-			ave_time_std  =0
+			time_mean =0
+			time_std  =0
 		# python 3.x
 		# for key, values in  time_recod.link_tt.items():
 		# python 2.7
@@ -104,7 +137,7 @@ class kdd_data():
 			else:
 				link_mean.append(np.mean(value))
 				link_std.append(np.std(value))
-		vector =[v_count,ave_time_mean,ave_time_std] + link_count+link_mean+link_std
+		vector =[v_count,time_mean,time_std] + link_count+link_mean+link_std
 		return vector
 		# for key, value in time_recod.link_tt.iteritems():
 		# 	v_l =len(value)
@@ -116,7 +149,7 @@ class kdd_data():
 
 	def format_data_in_timeInterval(self,traj_data,vol_data):
 		travel_times={}
-		print len(traj_data)
+		print (len(traj_data))
 		for i in range(len(traj_data)):
 			each_traj = traj_data[i].replace('"', '').split(',')
 			intersection_id = each_traj[0]
@@ -154,7 +187,9 @@ A =kdd_data()
 route_time_windows = list(A.travel_times['C-3'].keys())
 route_time_windows.sort()
 # print route_time_windows[0:60]
-mat =A.get_train_data(A.travel_times,'C-3')
+mat =A.get_feature_matrix(A.travel_times,'C-3')
+X_train,Y_train =A.prepare_train_data(mat)
+
 
 
 	
