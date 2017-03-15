@@ -1,7 +1,7 @@
 import math
 from datetime import datetime,timedelta
 import numpy as np
-import autosklearn.regression
+# import autosklearn.regression
 import sklearn.cross_validation
 import sklearn.metrics
 from sklearn import linear_model
@@ -21,8 +21,9 @@ class kdd_data():
 		self.time_interval = 20 # 10 minutes interaval
 		time_file = path+'trajectories(table 5)_training'+file_suffix
 		vol_file =path+'volume(table 6)_training'+file_suffix
+		road_link_file=path+'links (table 3)'+file_suffix 
 		weathre_file =path +'weather (table 7)_test1'+file_suffix
-		traj_data,vol_data=self.load_data(time_file,vol_file)
+		traj_data,vol_data,link_ids_data=self.load_data(time_file,vol_file)
 		travel_times=self.format_data_in_timeInterval(traj_data,vol_data)
 		self.travel_times =self.zerofill_missed_time_info(travel_times)
 	def zerofill_missed_time_info(self,travel_times):
@@ -53,8 +54,12 @@ class kdd_data():
 			print (current_time)
 		return travel_times
 
+	def parse_road_link_ids(self,link_ids_data):
+		links ={}
+		for i in range(len(links_ids_data)):
+			links
 
-
+		
 	def load_data(self,time_file,vol_file):
 		# Step 1: Load trajectories
 		fr = open(time_file, 'r')
@@ -66,7 +71,12 @@ class kdd_data():
 		fr.readline()  # skip the header
 		vol_data = fr.readlines()
 		fr.close()
-		return traj_data, vol_data
+
+		fr =openn(road_link_file,'r')
+		fr.readline() # skip the header
+		links_ids=fr.readlines()
+		fr.claose()
+		return traj_data, vol_data, link_ids
 
 	def get_feature_matrix(self,travel_times_struct,route_id):
 		D=travel_times_struct[route_id]
@@ -84,16 +94,18 @@ class kdd_data():
 		X_train_hourse 				=	2
 		prediction_hourse 			=	2
 		prediction_interval_minutes =	self.time_interval
-		X_predict_n                 =   math.floor(X_train_hourse*60/self.time_interval)
-		Y_predict_n            		= 	math.floor(prediction_hourse*60 /prediction_interval_minutes)
-		len_time_windows_hours 		= 	math.floor((X_train_hourse+prediction_hourse)*60/prediction_interval_minutes)
+		X_predict_n                 =   int(math.floor(X_train_hourse*60/self.time_interval))
+		Y_predict_n            		= 	int(math.floor(prediction_hourse*60 /prediction_interval_minutes))
+		len_time_windows_hours 		= 	int(math.floor((X_train_hourse+prediction_hourse)*60/prediction_interval_minutes))
 		len_f =len(time_features)
-		sample_n =len_f-len_time_windows_hours+1
+		sample_n =int(len_f-len_time_windows_hours+1)
 		# lx =len(time_features[0])
 		# print (X_predict_n)
 		lx =27#len(time_features[0])
 		# print (lx)
 		# print (lx)
+		# print type(sample_n)
+		# print type(lx*X_predict_n)
 		X_train =np.zeros((sample_n, int(lx*X_predict_n)))
 		Y_train =np.zeros((sample_n, int(Y_predict_n)))
 		# Y_train =np.zeros(sample_n,Y_predict_n)
@@ -106,10 +118,10 @@ class kdd_data():
 				# X.append(time_features[l+i])
 				if len(time_features[l+i]) ==27:
 					X+=time_features[l+i]
-					print('1')
+					# print('1')
 				else:
 					X+=[0]*27
-					print('2')
+					# print('2')
 				# print (len(time_features[l+i]))
 			for y in range(Y_predict_n):
 				Y.append(time_features[l+X_predict_n+y][1])
@@ -160,7 +172,6 @@ class kdd_data():
 		# 	v_l =len(value)
 		# 	link_mean.append(np.mean(v_l))
 		# 	link_std.append(np.std(v_l))
-
 
 
 
