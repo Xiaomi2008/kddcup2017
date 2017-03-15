@@ -23,9 +23,10 @@ class kdd_data():
 		vol_file =path+'volume(table 6)_training'+file_suffix
 		road_link_file=path+'links (table 3)'+file_suffix 
 		weathre_file =path +'weather (table 7)_test1'+file_suffix
-		traj_data,vol_data,link_ids_data=self.load_data(time_file,vol_file)
-		travel_times=self.format_data_in_timeInterval(traj_data,vol_data)
-		self.travel_times =self.zerofill_missed_time_info(travel_times)
+		traj_data,vol_data,link_ids_data=self.load_data(time_file,vol_file,road_link_file)
+		self.link_ids=self.parse_road_link_ids(link_ids_data)
+		self.travel_times=self.format_data_in_timeInterval(traj_data,vol_data)
+		# self.travel_times =self.zerofill_missed_time_info(self.travel_times)
 	def zerofill_missed_time_info(self,travel_times):
 		# 1. find min start-time and max-end time across all roud_ids
 		start_time = datetime(2100,1,1,1,0)
@@ -55,12 +56,15 @@ class kdd_data():
 		return travel_times
 
 	def parse_road_link_ids(self,link_ids_data):
-		links ={}
-		for i in range(len(links_ids_data)):
-			links
+		link_ids =[]
+		for i in range(len(link_ids_data)):
+			each_line = link_ids_data[i].replace('"', '').split(',')
+			link_ids.append(each_line[0])
+		# print (len(link_ids))
+		return link_ids
 
 		
-	def load_data(self,time_file,vol_file):
+	def load_data(self,time_file,vol_file,road_link_file):
 		# Step 1: Load trajectories
 		fr = open(time_file, 'r')
 		fr.readline()  # skip the header
@@ -72,10 +76,10 @@ class kdd_data():
 		vol_data = fr.readlines()
 		fr.close()
 
-		fr =openn(road_link_file,'r')
+		fr =open(road_link_file,'r')
 		fr.readline() # skip the header
-		links_ids=fr.readlines()
-		fr.claose()
+		link_ids=fr.readlines()
+		fr.close()
 		return traj_data, vol_data, link_ids
 
 	def get_feature_matrix(self,travel_times_struct,route_id):
@@ -101,7 +105,7 @@ class kdd_data():
 		sample_n =int(len_f-len_time_windows_hours+1)
 		# lx =len(time_features[0])
 		# print (X_predict_n)
-		lx =27#len(time_features[0])
+		lx =len(time_features[0])
 		# print (lx)
 		# print (lx)
 		# print type(sample_n)
@@ -116,11 +120,11 @@ class kdd_data():
 			Y=[]
 			for i in range(X_predict_n):
 				# X.append(time_features[l+i])
-				if len(time_features[l+i]) ==27:
-					X+=time_features[l+i]
+				# if len(time_features[l+i]) ==27:
+				X+=time_features[l+i]
 					# print('1')
-				else:
-					X+=[0]*27
+				# else:
+					# X+=[0]*27
 					# print('2')
 				# print (len(time_features[l+i]))
 			for y in range(Y_predict_n):
@@ -157,8 +161,19 @@ class kdd_data():
 		link_count =[]
 		link_ids =list(time_recod.link_tt.keys())
 		link_ids.sort()
-		for id in link_ids:
-			value=time_recod.link_tt[id]
+
+		all_link_stat={}
+		for id in self.link_ids:
+			all_link_stat[id]=[]
+		l1=len(all_link_stat)
+		for id in time_recod.link_tt:
+			all_link_stat[id]=time_recod.link_tt[id]
+		l2 =len(all_link_stat)
+
+		assert(l1==l2)
+
+		for id in all_link_stat:
+			value=all_link_stat[id]
 			link_count.append(len(value))
 			if len(value) == 0:
 				link_mean.append(0)
@@ -212,16 +227,20 @@ class kdd_data():
 
 A =kdd_data()
 
-route_time_windows = list(A.travel_times['C-3'].keys())
-route_time_windows.sort()
+# route_time_windows = list(A.travel_times['C-3'].keys())
+# route_time_windows.sort()
 # print route_time_windows[0:60]
-mat =A.get_feature_matrix(A.travel_times,'C-3')
-X_train,Y_train =A.prepare_train_data(mat)
+from sklearn.metrics import mean_absolute_error
+for key in A.travel_times:
+	mat =A.get_feature_matrix(A.travel_times,key)
+	X_train,Y_train =A.prepare_train_data(mat)
+	clf = linear_model.MultiTaskLasso(alpha=0.1,max_iter=10000)
+	clf.fit(X_train,Y_train)	
+	print("mean erros of route {}".format(key))
+	print(mean_absolute_error(Y_train,clf.predict(X_train)))
+# clf.score(X_train,Y_train)
 # autor=autosklearn.regression.AutoSklearnRegressor()
 # autor.fit(X_train,Y_train)
-clf = linear_model.MultiTaskLasso(alpha=0.1,max_iter=5000)
-clf.fit(X_train,Y_train)
-clf.score(X_train,Y_train)
 
 
 
