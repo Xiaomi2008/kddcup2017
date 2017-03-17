@@ -49,7 +49,7 @@ class kdd_data():
 		for rd_ids in travel_times.keys():
 			first_time =  next(iter(travel_times[rd_ids]))
 			link_tt_ids[rd_ids]=list(travel_times[rd_ids][first_time].link_tt.keys())
-
+		added_time =timedelta(minutes=self.time_interval)
 		while current_time <= end_time:
 			for r_id in travel_times.keys():
 				time_windows  =list(travel_times[r_id].keys())
@@ -58,7 +58,7 @@ class kdd_data():
 					t_record.zero_init(link_tt_ids[rd_ids])
 					travel_times[r_id][current_time] =t_record
 					print (current_time)
-			current_time+=timedelta(minutes=self.time_interval)
+			current_time+=added_time
 		return travel_times
 
 	def parse_road_link_ids(self,link_ids_data):
@@ -142,7 +142,7 @@ class kdd_data():
 		Y_train =np.zeros((sample_n, int(Y_predict_n)))
 
 
-		print len_f
+		print(len_f)
 		all_Y=[]
 		# interplote the missed Y (average time)
 		# all_Y=[i for i in  ]
@@ -258,25 +258,7 @@ class kdd_data():
 				t_record.link_tt[info[0]].append(float(info[2]))
 		return travel_times
 
-A =kdd_data()
 
-# route_time_windows = list(A.travel_times['C-3'].keys())
-# route_time_windows.sort()
-# print route_time_windows[0:60]
-from sklearn.metrics import mean_absolute_error
-from sklearn.metrics import explained_variance_score
-clf={}
-# for route_id in A.travel_times:
-route_id='B-3'
-A.travel_times=A.zerofill_missed_time_info(A.travel_times,route_id)
-mat =A.get_feature_matrix(A.travel_times,route_id)
-X_train,Y_train =A.prepare_train_data(mat)
-clf[route_id] = linear_model.MultiTaskLasso(alpha=0.1,max_iter=20000)
-clf[route_id].fit(X_train,Y_train)
-Y_p =	clf[route_id].predict(X_train)
-print("mean erros of route {}".format(route_id))
-print(mean_absolute_error(Y_train,Y_p))
-print(explained_variance_score(Y_train,Y_p))
 # clf.score(X_train,Y_train)
 # autor=autosklearn.regression.AutoSklearnRegressor()
 # autor.fit(X_train,Y_train)
