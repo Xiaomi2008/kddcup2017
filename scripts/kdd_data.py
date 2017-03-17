@@ -18,7 +18,7 @@ class time_recod_data():
 			# self.link_tt(link_ids)
 class kdd_data():
 	def __init__(self):
-		self.time_interval = 20 # 10 minutes interaval
+		self.time_interval = 5 # 10 minutes interaval
 		time_file = path+'trajectories(table 5)_training'+file_suffix
 		vol_file =path+'volume(table 6)_training'+file_suffix
 		road_link_file=path+'links (table 3)'+file_suffix 
@@ -27,15 +27,21 @@ class kdd_data():
 		self.link_ids=self.parse_road_link_ids(link_ids_data)
 		self.travel_times=self.format_data_in_timeInterval(traj_data,vol_data)
 		# self.travel_times =self.zerofill_missed_time_info(self.travel_times)
-	def zerofill_missed_time_info(self,travel_times):
+	def zerofill_missed_time_info(self,travel_times,route_id =None):
 		# 1. find min start-time and max-end time across all roud_ids
 		start_time = datetime(2100,1,1,1,0)
 		end_time  =datetime(1900,1,1,1,0)
-		for r_id in travel_times.keys():
-			time_windows  =list(travel_times[r_id].keys())
+		if route_id is not None:
+			time_windows  =list(travel_times[route_id].keys())
 			time_windows.sort()
 			start_time = time_windows[0] if start_time > time_windows[0] else start_time
 			end_time = time_windows[-1] if end_time < time_windows[-1] else end_time
+		else:
+			for r_id in travel_times.keys():
+				time_windows  =list(travel_times[r_id].keys())
+				time_windows.sort()
+				start_time = time_windows[0] if start_time > time_windows[0] else start_time
+				end_time = time_windows[-1] if end_time < time_windows[-1] else end_time
 		current_time = start_time
 
 		# 2 . get all routes link ids
@@ -51,8 +57,8 @@ class kdd_data():
 					t_record =time_recod_data()
 					t_record.zero_init(link_tt_ids[rd_ids])
 					travel_times[r_id][current_time] =t_record
+					print (current_time)
 			current_time+=timedelta(minutes=self.time_interval)
-			print (current_time)
 		return travel_times
 
 	def parse_road_link_ids(self,link_ids_data):
@@ -94,6 +100,34 @@ class kdd_data():
 			mat.append(vect)
 			# print vect
 		return mat
+	def interpolate_zerolist(self, list_Y):
+		# all_Y  =list(list_Y)
+		all_Y=list_Y#[0 for i in range(len(list_Y))]
+		non_zero_y_idx =[]
+		len_f=len(list_Y)
+		non_zero_y_idx =[i for i, e in enumerate(list_Y) if e!=0]
+		# print len(non_zero_y_idx)
+		first_nonzero_idx =non_zero_y_idx[0]
+		left_idx  =0
+		right_idx =1
+		for c_idx in range(len_f):
+			if list_Y[c_idx]==0:
+				if c_idx<first_nonzero_idx:
+					all_Y[c_idx]=list_Y[first_nonzero_idx]
+				else:
+					while not (c_idx> non_zero_y_idx[left_idx] and c_idx <non_zero_y_idx[right_idx]) and right_idx<len(non_zero_y_idx)-1:
+						left_idx+=1
+						right_idx+=1
+					l_idx=non_zero_y_idx[left_idx]
+					r_idx=non_zero_y_idx[right_idx]
+					# if c_idx >non_zero_y_idx[right_idx]:
+					w1=0 if c_idx >non_zero_y_idx[right_idx] else float(abs(c_idx-l_idx))/float(abs(l_idx-r_idx))
+					w2=1-w1
+					assert(w1 >=0 and w2>=0 and w1<=1 and w2 <=1)
+					all_Y[c_idx]=w1*(list_Y[l_idx] +w2*list_Y[r_idx])/2.0
+		return all_Y
+		# ------------------------------------------------------------------
+
 	def prepare_train_data(self,time_features):
 		X_train_hourse 				=	2
 		prediction_hourse 			=	2
@@ -103,32 +137,35 @@ class kdd_data():
 		len_time_windows_hours 		= 	int(math.floor((X_train_hourse+prediction_hourse)*60/prediction_interval_minutes))
 		len_f =len(time_features)
 		sample_n =int(len_f-len_time_windows_hours+1)
-		# lx =len(time_features[0])
-		# print (X_predict_n)
 		lx =len(time_features[0])
-		# print (lx)
-		# print (lx)
-		# print type(sample_n)
-		# print type(lx*X_predict_n)
 		X_train =np.zeros((sample_n, int(lx*X_predict_n)))
 		Y_train =np.zeros((sample_n, int(Y_predict_n)))
-		# Y_train =np.zeros(sample_n,Y_predict_n)
-		# X_train =[]
-		# Y_train =[]
+
+
+		print len_f
+		all_Y=[]
+		# interplote the missed Y (average time)
+		# all_Y=[i for i in  ]
+		for l in range(len_f):
+			all_Y.append(time_features[l][1])
+		all_Y=self.interpolate_zerolist(all_Y)
 		for l in range(sample_n):
 			X=[]
 			Y=[]
+			# Y_nozeros=[]
+			# for all_time_range in range(X_predict_n+Y_predict_n):
+			# 	Y+=time_features[l+all_time_range][1]
+			# non_zindex =  [i for i,e in enumerate(Y_nozeros) if e!=0]
 			for i in range(X_predict_n):
 				# X.append(time_features[l+i])
 				# if len(time_features[l+i]) ==27:
 				X+=time_features[l+i]
-					# print('1')
-				# else:
-					# X+=[0]*27
-					# print('2')
-				# print (len(time_features[l+i]))
+				
 			for y in range(Y_predict_n):
-				Y.append(time_features[l+X_predict_n+y][1])
+				Y.append(all_Y[l+X_predict_n+y])
+				# if all_Y[l+X_predict_n+y] ==0:
+				# 	import ipdb
+				# 	ipdb.set_trace()
 			x_n =np.array(X)
 			# print (x_n.shape)
 			# print (X)
@@ -183,10 +220,6 @@ class kdd_data():
 				link_std.append(np.std(value))
 		vector =[v_count,time_mean,time_std] + link_count+link_mean+link_std
 		return vector
-		# for key, value in time_recod.link_tt.iteritems():
-		# 	v_l =len(value)
-		# 	link_mean.append(np.mean(v_l))
-		# 	link_std.append(np.std(v_l))
 
 
 
@@ -231,13 +264,19 @@ A =kdd_data()
 # route_time_windows.sort()
 # print route_time_windows[0:60]
 from sklearn.metrics import mean_absolute_error
-for key in A.travel_times:
-	mat =A.get_feature_matrix(A.travel_times,key)
-	X_train,Y_train =A.prepare_train_data(mat)
-	clf = linear_model.MultiTaskLasso(alpha=0.1,max_iter=10000)
-	clf.fit(X_train,Y_train)	
-	print("mean erros of route {}".format(key))
-	print(mean_absolute_error(Y_train,clf.predict(X_train)))
+from sklearn.metrics import explained_variance_score
+clf={}
+# for route_id in A.travel_times:
+route_id='B-3'
+A.travel_times=A.zerofill_missed_time_info(A.travel_times,route_id)
+mat =A.get_feature_matrix(A.travel_times,route_id)
+X_train,Y_train =A.prepare_train_data(mat)
+clf[route_id] = linear_model.MultiTaskLasso(alpha=0.1,max_iter=20000)
+clf[route_id].fit(X_train,Y_train)
+Y_p =	clf[route_id].predict(X_train)
+print("mean erros of route {}".format(route_id))
+print(mean_absolute_error(Y_train,Y_p))
+print(explained_variance_score(Y_train,Y_p))
 # clf.score(X_train,Y_train)
 # autor=autosklearn.regression.AutoSklearnRegressor()
 # autor.fit(X_train,Y_train)
