@@ -12,9 +12,10 @@ def train_deep_model(X_train,Y_train):
 	# row =75
 	# col =24
 	n,h,w,c =X_train.shape
-	ip = Input(shape=(h, w,c))
+	# ip = Input(shape=(h, w,c))
+	shape =(h, w,c)
 	model_name ='sample_conv'
-	out=kdd_deep_models.kdd_model(ip)
+	ip,out=kdd_deep_models.kdd_model(shape)
 	model=Model(ip,out)
 	optimizer =RMSprop(lr = 1e-4)
 	model.compile(optimizer=optimizer, loss='mean_absolute_percentage_error', metrics=['mape'])
@@ -39,7 +40,8 @@ if __name__ == "__main__":
 	mat =A.get_feature_matrix(A.travel_times,route_id)
 	X_train,Y_train =A.prepare_train_data(mat)
 	n,d=X_train.shape
-	X_train_2D = np.reshape(X_train,(n,24,-1,1))
+	time_d =int(2*60/A.time_interval)
+	X_train_2D = np.reshape(X_train,(n,time_d,-1,1))
 
 	# from sklearn.utils import shuffle
 	# X_train_2D,Y_train=shuffle(X_train_2D,Y_train,random_state=0)

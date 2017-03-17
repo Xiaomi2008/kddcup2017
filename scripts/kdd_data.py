@@ -18,7 +18,7 @@ class time_recod_data():
 			# self.link_tt(link_ids)
 class kdd_data():
 	def __init__(self):
-		self.time_interval = 5 # 10 minutes interaval
+		self.time_interval = 1 # 10 minutes interaval
 		time_file = path+'trajectories(table 5)_training'+file_suffix
 		vol_file =path+'volume(table 6)_training'+file_suffix
 		road_link_file=path+'links (table 3)'+file_suffix 
