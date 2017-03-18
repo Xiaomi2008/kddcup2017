@@ -12,13 +12,14 @@ class time_recod_data():
 	def __init__(self):
 		self.link_tt={}
 		self.car_traj_time={}
+		self.car_start_time={}
 	def zero_init(self,link_ids):
 		for l_id in link_ids:
 			self.link_tt[l_id] =[]
 			# self.link_tt(link_ids)
 class kdd_data():
 	def __init__(self):
-		self.time_interval = 1 # 10 minutes interaval
+		self.time_interval = 5 # 10 minutes interaval
 		time_file = path+'trajectories(table 5)_training'+file_suffix
 		vol_file =path+'volume(table 6)_training'+file_suffix
 		road_link_file=path+'links (table 3)'+file_suffix 
@@ -60,7 +61,10 @@ class kdd_data():
 					print (current_time)
 			current_time+=added_time
 		return travel_times
-
+	def one_hot(self,num,length):
+		x = [0 for k in range(length)]
+		x[num]=1
+		return x
 	def parse_road_link_ids(self,link_ids_data):
 		link_ids =[]
 		for i in range(len(link_ids_data)):
@@ -187,9 +191,33 @@ class kdd_data():
 		if v_count >0:
 			time_mean =np.mean(V) #sum(V)/float(v_count)
 			time_std  =np.std(V)
+			start_times = list(time_recod.car_start_time.values())
+			start_day   = start_times[0].weekday()
+			start_hour  = start_times[0].hour
+			start_minute  = start_times[0].minute
+			all_start_minutes =[]
+			for t in start_times:
+				all_start_minutes.append(t.minute)
+			if len(all_start_minutes)>1:
+				all_start_minutes.sort()
+				start_min_diff =np.diff(all_start_minutes)
+				mean_start_min_diff=np.mean(start_min_diff)
+				std_start_min_diff=np.std(start_min_diff) 
+			else:
+				mean_start_min_diff =-1
+				std_start_min_diff =-1
+
 		else:
 			time_mean =0
 			time_std  =0
+			start_times =-1
+			start_day = -1
+			start_hour = -1
+			start_minute =-1
+			mean_start_min_diff =-1
+			std_start_min_diff =-1
+
+
 		# python 3.x
 		# for key, values in  time_recod.link_tt.items():
 		# python 2.7
@@ -218,7 +246,12 @@ class kdd_data():
 			else:
 				link_mean.append(np.mean(value))
 				link_std.append(np.std(value))
-		vector =[v_count,time_mean,time_std] + link_count+link_mean+link_std
+		# vector =[v_count,time_mean,time_std,start_day,start_hour,start_minute,mean_start_min_diff] + link_count+link_mean+link_std
+		vector =[v_count,time_mean,time_std]+self.one_hot(start_day+1,8) +self.one_hot(start_hour+1,25) \
+		+self.one_hot(start_minute+1,61)+[mean_start_min_diff] + link_count+link_mean+link_std
+		# import ipdb
+		# ipdb.set_trace()
+		# print vector
 		return vector
 
 
@@ -244,7 +277,8 @@ class kdd_data():
 			if start_time_window not in travel_times[route_id].keys():
 				travel_times[route_id][start_time_window] = time_recod_data()
 			t_record =travel_times[route_id][start_time_window]
-			t_record.car_traj_time[each_traj[2]]=tt
+			t_record.car_traj_time[each_traj[2]]=tt # each_traj[2] is CardID!
+			t_record.car_start_time[each_traj[2]]=trace_start_time
 			# print travel_times[route_id][start_time_window].car_traj_time[each_traj[2]]
 			link_seq =each_traj[4]
 			# print link_seq

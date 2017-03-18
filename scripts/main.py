@@ -7,6 +7,7 @@ from keras.models import Model
 from keras import backend as K
 from keras.optimizers import RMSprop, SGD
 import matplotlib.pyplot as plt
+from keras import metrics
 
 def train_deep_model(X_train,Y_train):
 	# row =75
@@ -18,13 +19,27 @@ def train_deep_model(X_train,Y_train):
 	ip,out=kdd_deep_models.kdd_model(shape)
 	model=Model(ip,out)
 	optimizer =RMSprop(lr = 1e-4)
-	model.compile(optimizer=optimizer, loss='mean_absolute_percentage_error', metrics=['mape'])
+	model.compile(optimizer=optimizer, loss='mean_absolute_percentage_error', metrics=[metrics.mape])
 	weight_h5_file='./'+ model_name +'.h5'
 	best_model = ModelCheckpoint(weight_h5_file, verbose = 1, save_best_only = True)
 	tensorboard= TensorBoard(log_dir='./logs',histogram_freq=0,write_graph=True,write_images=False)
 	history=model.fit(x=X_train,y=Y_train, epochs = 500, validation_split=0.2, callbacks = [tensorboard,best_model])
-def mape(y_true,y_pred):
-	return K.abs(y_true-y_pred)/K.sum(y_true)
+def model_predict(X_test):
+	n,h,w,c =X_test.shape
+	# ip = Input(shape=(h, w,c))
+	shape =(h, w,c)
+	model_name ='sample_conv'
+	weight_h5_file='./'+ model_name +'.h5'
+	ip,out=kdd_deep_models.kdd_model(shape)
+	model=Model(ip,out)
+	model.load_weights(weight_h5_file)
+	return model.predict(X_test)
+	# optimizer =RMSprop(lr = 1e-4)
+	# model.compile(optimizer=optimizer, loss='mean_absolute_percentage_error', metrics=['mape'])
+	
+
+# def mape(y_true,y_pred):
+	# return K.abs(y_true-y_pred)/K.sum(y_true)
 if __name__ == "__main__":
 	A =kdd_data.kdd_data()
 
@@ -35,24 +50,30 @@ if __name__ == "__main__":
 	from sklearn.metrics import explained_variance_score
 	clf={}
 	# for route_id in A.travel_times:
-	route_id='B-3'
+	# route_id='B-3'
 	# A.travel_times=A.zerofill_missed_time_info(A.travel_times,route_id)
+	# mat =A.get_feature_matrix(A.travel_times,route_id)
+	# X_train1,Y_train =A.prepare_train_data(mat)
+
+
+	route_id='A-3'
+	A.travel_times=A.zerofill_missed_time_info(A.travel_times,route_id)
 	mat =A.get_feature_matrix(A.travel_times,route_id)
-	X_train,Y_train =A.prepare_train_data(mat)
-	n,d=X_train.shape
+	X_train2,Y_train =A.prepare_train_data(mat)
+
+	# X_train=np.concatenate((X_train1,X_train2[:6540]),aixs=1)
+	n,d=X_train2.shape
 	time_d =int(2*60/A.time_interval)
-	X_train_2D = np.reshape(X_train,(n,time_d,-1,1))
-
-	# from sklearn.utils import shuffle
-	# X_train_2D,Y_train=shuffle(X_train_2D,Y_train,random_state=0)
-
+	X_train_2D = np.reshape(X_train2,(n,time_d,-1,1))
+	from sklearn.utils import shuffle
+	X_train_2D,Y_train=shuffle(X_train_2D,Y_train,random_state=0)
 	train_deep_model(X_train_2D,Y_train)
 
 
 
-	# clf[route_id] = linear_model.MultiTaskLasso(alpha=0.1,max_iter=20000)
-	# clf[route_id].fit(X_train,Y_train)
-	# Y_p =	clf[route_id].predict(X_train)
-	# print("mean erros of route {}".format(route_id))
-	# print(mean_absolute_error(Y_train,Y_p))
-	# print(explained_variance_score(Y_train,Y_p))
+	clf= linear_model.MultiTaskLasso(alpha=0.1,max_iter=10000)
+	clf.fit(X_train,Y_train)
+	Y_p =	clf.predict(X_train)
+	print("mean erros of route {}".format(route_id))
+	print(mean_absolute_error(Y_train,Y_p))
+	print(explained_variance_score(Y_train,Y_p))
