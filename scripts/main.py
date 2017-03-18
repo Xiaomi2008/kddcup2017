@@ -5,9 +5,10 @@ from keras.layers import Input
 from keras.callbacks  import CSVLogger, ModelCheckpoint, TensorBoard
 from keras.models import Model
 from keras import backend as K
-from keras.optimizers import RMSprop, SGD
+from keras.optimizers import RMSprop, SGD,Adam
 import matplotlib.pyplot as plt
 from keras import metrics
+import os
 
 def train_deep_model(X_train,Y_train):
 	# row =75
@@ -18,9 +19,20 @@ def train_deep_model(X_train,Y_train):
 	model_name ='sample_conv'
 	ip,out=kdd_deep_models.kdd_model(shape)
 	model=Model(ip,out)
-	optimizer =RMSprop(lr = 1e-4)
-	model.compile(optimizer=optimizer, loss='mean_absolute_percentage_error', metrics=[metrics.mape])
+
 	weight_h5_file='./'+ model_name +'.h5'
+	if os.path.isfile(weight_h5_file):
+		try:
+			model.load_weights(weight_h5_file)
+		except:
+			print ('the model {} can not  be loaded'.format(weight_h5_file))
+			pass
+
+
+	# optimizer =RMSprop(lr = 1e-4)
+	optimizer =Adam(lr=0.001, beta_1=0.9, beta_2=0.999, epsilon=1e-08, decay=0.00001)
+	model.compile(optimizer=optimizer, loss='mean_absolute_percentage_error', metrics=[metrics.mape])
+	model.summary()
 	best_model = ModelCheckpoint(weight_h5_file, verbose = 1, save_best_only = True)
 	tensorboard= TensorBoard(log_dir='./logs',histogram_freq=0,write_graph=True,write_images=False)
 	history=model.fit(x=X_train,y=Y_train, epochs = 500, validation_split=0.2, callbacks = [tensorboard,best_model])
@@ -57,7 +69,7 @@ if __name__ == "__main__":
 
 
 	route_id='A-3'
-	A.travel_times=A.zerofill_missed_time_info(A.travel_times,route_id)
+	# A.travel_times=A.zerofill_missed_time_info(A.travel_times,route_id)
 	mat =A.get_feature_matrix(A.travel_times,route_id)
 	X_train2,Y_train =A.prepare_train_data(mat)
 
@@ -71,9 +83,9 @@ if __name__ == "__main__":
 
 
 
-	clf= linear_model.MultiTaskLasso(alpha=0.1,max_iter=10000)
-	clf.fit(X_train,Y_train)
-	Y_p =	clf.predict(X_train)
-	print("mean erros of route {}".format(route_id))
-	print(mean_absolute_error(Y_train,Y_p))
-	print(explained_variance_score(Y_train,Y_p))
+	# clf= linear_model.MultiTaskLasso(alpha=0.1,max_iter=10000)
+	# clf.fit(X_train,Y_train)
+	# Y_p =	clf.predict(X_train)
+	# print("mean erros of route {}".format(route_id))
+	# print(mean_absolute_error(Y_train,Y_p))
+	# print(explained_variance_score(Y_train,Y_p))
