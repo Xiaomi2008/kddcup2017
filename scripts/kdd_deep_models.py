@@ -11,7 +11,7 @@ from keras.layers.wrappers import Bidirectional, TimeDistributed
 from keras import backend as K
 from keras.models import Model
 from keras.layers.normalization import BatchNormalization
-def kdd_model(input_shape):
+def kdd_model(input_shape,output_shape):
 	ip = Input(shape=input_shape)
 	print (input_shape)
 	conv1=Convolution2D(48, (1, input_shape[1]), activation='relu', padding='valid')(ip)
@@ -39,7 +39,7 @@ def kdd_model(input_shape):
 	d=BatchNormalization()(d)
 	d=Dropout(0.5)(d)
 	# print(d)
-	n =input_shape[0]
+	n =output_shape[0]
 	print(n)
 	out =Dense(n)(d)
 	return ip,out

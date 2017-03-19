@@ -15,9 +15,11 @@ def train_deep_model(X_train,Y_train):
 	# col =24
 	n,h,w,c =X_train.shape
 	# ip = Input(shape=(h, w,c))
-	shape =(h, w,c)
+	input_shape =(h, w,c)
 	model_name ='sample_conv'
-	ip,out=kdd_deep_models.kdd_model(shape)
+	n,out_n =Y_train.shape
+	output_shape=(out_n,)
+	ip,out=kdd_deep_models.kdd_model(input_shape,output_shape)
 	model=Model(ip,out)
 
 	weight_h5_file='./'+ model_name +'.h5'

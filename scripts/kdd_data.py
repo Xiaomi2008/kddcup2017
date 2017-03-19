@@ -19,7 +19,7 @@ class time_recod_data():
 			# self.link_tt(link_ids)
 class kdd_data():
 	def __init__(self):
-		self.time_interval = 5 # 10 minutes interaval
+		self.time_interval = 1 # 10 minutes interaval
 		time_file = path+'trajectories(table 5)_training'+file_suffix
 		vol_file =path+'volume(table 6)_training'+file_suffix
 		road_link_file=path+'links (table 3)'+file_suffix 
@@ -138,12 +138,14 @@ class kdd_data():
 		prediction_interval_minutes =	self.time_interval
 		X_predict_n                 =   int(math.floor(X_train_hourse*60/self.time_interval))
 		Y_predict_n            		= 	int(math.floor(prediction_hourse*60 /prediction_interval_minutes))
+		Y_hours_div_by_20min_n      = 	int(math.floor(prediction_hourse*60 /20))
 		len_time_windows_hours 		= 	int(math.floor((X_train_hourse+prediction_hourse)*60/prediction_interval_minutes))
 		len_f =len(time_features)
 		sample_n =int(len_f-len_time_windows_hours+1)
 		lx =len(time_features[0])
 		X_train =np.zeros((sample_n, int(lx*X_predict_n)))
-		Y_train =np.zeros((sample_n, int(Y_predict_n)))
+		# Y_train =np.zeros((sample_n, int(Y_predict_n)))
+		Y_train =np.zeros((sample_n, int(Y_hours_div_by_20min_n)))
 
 
 		print(len_f)
@@ -155,7 +157,8 @@ class kdd_data():
 		all_Y=self.interpolate_zerolist(all_Y)
 		for l in range(sample_n):
 			X=[]
-			Y=[]
+			Y_given_interval=[]
+			Y_20min_interval=[]
 			# Y_nozeros=[]
 			# for all_time_range in range(X_predict_n+Y_predict_n):
 			# 	Y+=time_features[l+all_time_range][1]
@@ -166,16 +169,22 @@ class kdd_data():
 				X+=time_features[l+i]
 				
 			for y in range(Y_predict_n):
-				Y.append(all_Y[l+X_predict_n+y])
+				Y_given_interval.append(all_Y[l+X_predict_n+y])
 				# if all_Y[l+X_predict_n+y] ==0:
 				# 	import ipdb
 				# 	ipdb.set_trace()
+			t20_min_to_curmin_r =int(Y_predict_n/Y_hours_div_by_20min_n)
+			# equivalent to (20min/given interval minutes(1,5,10 typically)
+			for y in range(Y_hours_div_by_20min_n):
+				Y_20min_interval.append(np.mean(Y_given_interval[y*t20_min_to_curmin_r:(y+1)*t20_min_to_curmin_r]))
+
 			x_n =np.array(X)
 			# print (x_n.shape)
 			# print (X)
 			X_train[l,:]=np.array(X)
 			# X_train.append(np.array(X))
-			Y_train[l,:]=np.array(Y)
+			# Y_train[l,:]=np.array(Y)
+			Y_train[l,:]=np.array(Y_20min_interval)
 		# X_return = np.array(X_train)
 		# Y_return = np.array(Y_train)
 		# import ipdb
