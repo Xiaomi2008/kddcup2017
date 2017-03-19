@@ -16,6 +16,38 @@ def kdd_model(input_shape,output_shape):
 	print (input_shape)
 	conv1=Convolution2D(48, (1, input_shape[1]), activation='relu', padding='valid')(ip)
 	conv1=BatchNormalization()(conv1)
+	conv2=Convolution2D(32, (3, 1), activation='relu', padding='same')(conv1)
+	conv2=BatchNormalization()(conv2)
+	conv3=Convolution2D(32, (3, 1), activation='relu', padding='same')(conv2)
+	conv3=BatchNormalization()(conv3)
+	pool1=MaxPooling2D(pool_size=(2,1),strides=(2,1))(conv3)
+	
+	conv4=Convolution2D(64, (3, 1), activation='relu', padding='same')(pool1)
+	conv4=BatchNormalization()(conv4)
+	conv5=Convolution2D(64, (3, 1), activation='relu', padding='same')(conv4)
+	conv5=BatchNormalization()(conv5)
+	pool2=MaxPooling2D(pool_size=(2,1),strides=(2,1))(conv5)
+
+	conv6=Convolution2D(128, (3, 1), activation='relu', padding='same')(pool2)
+	conv6=BatchNormalization()(conv6)
+	conv7=Convolution2D(128, (3, 1), activation='relu', padding='same')(conv6)
+	conv7=BatchNormalization()(conv7)
+
+	
+	ft=Flatten()(conv5)
+	d=Dense(256)(ft)
+	d=BatchNormalization()(d)
+	d=Dropout(0.5)(d)
+	# print(d)
+	n =output_shape[0]
+	print(n)
+	out =Dense(n)(d)
+	return ip,out
+def kdd_model_old(input_shape,output_shape):
+	ip = Input(shape=input_shape)
+	print (input_shape)
+	conv1=Convolution2D(48, (1, input_shape[1]), activation='relu', padding='valid')(ip)
+	conv1=BatchNormalization()(conv1)
 	# conv1=Dropout(0.5)(conv1)
 	# conv2=Convolution1D(32, 2, activation='relu', padding='valid')(conv1)
 	# conv2=BatchNormalization()(conv2)

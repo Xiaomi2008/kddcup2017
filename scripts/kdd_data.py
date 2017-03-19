@@ -178,7 +178,7 @@ class kdd_data():
 			for y in range(Y_hours_div_by_20min_n):
 				Y_20min_interval.append(np.mean(Y_given_interval[y*t20_min_to_curmin_r:(y+1)*t20_min_to_curmin_r]))
 
-			x_n =np.array(X)
+			# x_n =np.array(X)
 			# print (x_n.shape)
 			# print (X)
 			X_train[l,:]=np.array(X)

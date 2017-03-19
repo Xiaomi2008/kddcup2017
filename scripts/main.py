@@ -19,7 +19,7 @@ def train_deep_model(X_train,Y_train):
 	model_name ='sample_conv'
 	n,out_n =Y_train.shape
 	output_shape=(out_n,)
-	ip,out=kdd_deep_models.kdd_model(input_shape,output_shape)
+	ip,out=kdd_deep_models.kdd_model_old(input_shape,output_shape)
 	model=Model(ip,out)
 
 	weight_h5_file='./'+ model_name +'.h5'
@@ -38,13 +38,13 @@ def train_deep_model(X_train,Y_train):
 	best_model = ModelCheckpoint(weight_h5_file, verbose = 1, save_best_only = True)
 	tensorboard= TensorBoard(log_dir='./logs',histogram_freq=0,write_graph=True,write_images=False)
 	history=model.fit(x=X_train,y=Y_train, epochs = 500, validation_split=0.2, callbacks = [tensorboard,best_model])
-def model_predict(X_test):
+def model_predict(X_test,output_shape):
 	n,h,w,c =X_test.shape
 	# ip = Input(shape=(h, w,c))
-	shape =(h, w,c)
+	input_shape =(h, w,c)
 	model_name ='sample_conv'
 	weight_h5_file='./'+ model_name +'.h5'
-	ip,out=kdd_deep_models.kdd_model(shape)
+	ip,out=kdd_deep_models.kdd_model_old(input_shape,output_shape)
 	model=Model(ip,out)
 	model.load_weights(weight_h5_file)
 	return model.predict(X_test)
@@ -82,6 +82,10 @@ if __name__ == "__main__":
 	from sklearn.utils import shuffle
 	X_train_2D,Y_train=shuffle(X_train_2D,Y_train,random_state=0)
 	train_deep_model(X_train_2D,Y_train)
+
+	n,outp=Y_train.shape
+	outshape =(outp,)
+	Y_p=model_predict(X_train_2D,outshape)
 
 
 
