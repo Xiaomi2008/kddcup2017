@@ -154,26 +154,33 @@ class kdd_data():
 		# all_Y=[i for i in  ]
 		for l in range(len_f):
 			all_Y.append(time_features[l][1])
+		print('start interpolate Y')
 		all_Y=self.interpolate_zerolist(all_Y)
+		t20_min_to_curmin_r =int(Y_predict_n/Y_hours_div_by_20min_n)
+		X=[]
+		Y_given_interval=[]
 		for l in range(sample_n):
-			X=[]
-			Y_given_interval=[]
 			Y_20min_interval=[]
-			# Y_nozeros=[]
-			# for all_time_range in range(X_predict_n+Y_predict_n):
-			# 	Y+=time_features[l+all_time_range][1]
-			# non_zindex =  [i for i,e in enumerate(Y_nozeros) if e!=0]
-			for i in range(X_predict_n):
-				# X.append(time_features[l+i])
-				# if len(time_features[l+i]) ==27:
-				X+=time_features[l+i]
+			if l ==0:
+				for i in range(X_predict_n):
+					X.append(time_features[l+i])
+					for y in range(Y_predict_n):
+						Y_given_interval.append(all_Y[l+X_predict_n+y])
+					# import ipdb
+					# ipdb.set_trace()
+			else:
+				X.pop(0)
+				X.append(time_features[l+X_predict_n-1])
+				Y_given_interval.pop(0)
+				Y_given_interval.append(all_Y[l+X_predict_n+Y_predict_n-1])
+
 				
-			for y in range(Y_predict_n):
-				Y_given_interval.append(all_Y[l+X_predict_n+y])
+			# for y in range(Y_predict_n):
+			# 	Y_given_interval.append(all_Y[l+X_predict_n+y])
 				# if all_Y[l+X_predict_n+y] ==0:
 				# 	import ipdb
 				# 	ipdb.set_trace()
-			t20_min_to_curmin_r =int(Y_predict_n/Y_hours_div_by_20min_n)
+			
 			# equivalent to (20min/given interval minutes(1,5,10 typically)
 			for y in range(Y_hours_div_by_20min_n):
 				Y_20min_interval.append(np.mean(Y_given_interval[y*t20_min_to_curmin_r:(y+1)*t20_min_to_curmin_r]))
@@ -181,7 +188,7 @@ class kdd_data():
 			# x_n =np.array(X)
 			# print (x_n.shape)
 			# print (X)
-			X_train[l,:]=np.array(X)
+			X_train[l,:]=np.array(X).flatten()
 			# X_train.append(np.array(X))
 			# Y_train[l,:]=np.array(Y)
 			Y_train[l,:]=np.array(Y_20min_interval)
@@ -243,7 +250,8 @@ class kdd_data():
 		for id in time_recod.link_tt:
 			all_link_stat[id]=time_recod.link_tt[id]
 		l2 =len(all_link_stat)
-
+		# import ipdb
+		# ipdb.set_trace()
 		assert(l1==l2)
 
 		for id in all_link_stat:
@@ -258,6 +266,7 @@ class kdd_data():
 		# vector =[v_count,time_mean,time_std,start_day,start_hour,start_minute,mean_start_min_diff] + link_count+link_mean+link_std
 		vector =[v_count,time_mean,time_std]+self.one_hot(start_day+1,8) +self.one_hot(start_hour+1,25) \
 		+self.one_hot(start_minute+1,61)+[mean_start_min_diff] + link_count+link_mean+link_std
+		# ipdb.set_trace()
 		# import ipdb
 		# ipdb.set_trace()
 		# print vector
@@ -293,12 +302,15 @@ class kdd_data():
 			# print link_seq
 			link_seq= link_seq.split(';')
 			# print link_seq
+			# import ipdb
 			for link in link_seq:
 				info = link.split('#')
 				# print info
 				if info[0] not in t_record.link_tt.keys():
 					t_record.link_tt[info[0]]=[]
 				t_record.link_tt[info[0]].append(float(info[2]))
+			# ipdb.set_trace()
+
 		return travel_times
 
 
