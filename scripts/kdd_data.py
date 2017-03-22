@@ -8,14 +8,17 @@ from sklearn import linear_model
 from sklearn.cross_validation import cross_val_predict
 file_suffix = '.csv'
 path = '../../kdd_cup_data/dataSets/training/'  # set the data directory
+test_path ='../../kdd_cup_data/dataSets/testing_phase1/'
 class time_recod_data():
 	def __init__(self):
 		self.link_tt={}
+		self.link_st={}
 		self.car_traj_time={}
 		self.car_start_time={}
 	def zero_init(self,link_ids):
 		for l_id in link_ids:
 			self.link_tt[l_id] =[]
+			self.link_st[l_id] =[]
 			# self.link_tt(link_ids)
 class kdd_data():
 	def __init__(self):
@@ -26,8 +29,79 @@ class kdd_data():
 		weathre_file =path +'weather (table 7)_test1'+file_suffix
 		traj_data,vol_data,link_ids_data=self.load_data(time_file,vol_file,road_link_file)
 		self.link_ids=self.parse_road_link_ids(link_ids_data)
-		self.travel_times=self.format_data_in_timeInterval(traj_data,vol_data)
+		# self.travel_times=self.format_data_in_timeInterval(traj_data,vol_data)
 		# self.travel_times =self.zerofill_missed_time_info(self.travel_times)
+	def read_test_data(self):
+		test_time_file = test_path+'trajectories(table 5)_test1'+file_suffix
+		test_vol_file = test_path+'trajectories(table 5)_test1'+file_suffix
+		road_link_file=path+'links (table 3)'+file_suffix
+		traj_data,vol_data,link_ids_data=self.load_data(test_time_file,test_vol_file,road_link_file)
+		return self.format_data_in_timeInterval(traj_data,vol_data)
+	
+	def find_time_range(self,two_h_interval_list,start_time):
+		for i,time_range in enumerate(two_h_interval_list):
+			if time_range[0] <=start_time and time_range[1] >start_time:
+				return i , time_range[0]
+	def get_test_feature_mat(self,travel_time_info,route_id):
+		time_range_day1_am =('2016-10-18 06:00:00','2016-10-18 08:00:00')
+		time_range_day1_pm =('2016-10-18 15:00:00','2016-10-18 17:00:00')
+
+		time_range_day2_am =('2016-10-19 06:00:00','2016-10-19 08:00:00')
+		time_range_day2_pm =('2016-10-19 15:00:00','2016-10-19 17:00:00')
+
+		time_range_day3_am =('2016-10-20 06:00:00','2016-10-19 08:00:00')
+		time_range_day3_pm =('2016-10-20 15:00:00','2016-10-19 17:00:00')
+
+		time_range_day4_am =('2016-10-21 06:00:00','2016-10-22 08:00:00')
+		time_range_day4_pm =('2016-10-21 15:00:00','2016-10-22 17:00:00')
+
+		time_range_day5_am =('2016-10-22 06:00:00','2016-10-22 08:00:00')
+		time_range_day5_pm =('2016-10-22 15:00:00','2016-10-22 17:00:00')
+
+		time_range_day6_am =('2016-10-23 06:00:00','2016-10-23 08:00:00')
+		time_range_day6_pm =('2016-10-23 15:00:00','2016-10-23 17:00:00')
+
+		time_range_day7_am =('2016-10-24 06:00:00','2016-10-24 08:00:00')
+		time_range_day7_pm =('2016-10-24 15:00:00','2016-10-24 17:00:00')
+
+		time_list =[time_range_day1_am,time_range_day1_pm,time_range_day2_am,time_range_day2_pm, \
+					time_range_day3_am,time_range_day3_pm,time_range_day4_am,time_range_day4_pm, \
+					time_range_day5_am,time_range_day5_pm,time_range_day6_am,time_range_day6_pm, \
+					time_range_day7_am,time_range_day7_am]
+
+		# datetime.strptime(trace_start_time, "%Y-%m-%d %H:%M:%S")
+		two_h_interval =[]
+		dstart =[]
+		dend=[]
+		for time_str in time_list:
+			dstart =datetime.strptime(time_str[0], "%Y-%m-%d %H:%M:%S")
+			dend   =datetime.strptime(time_str[1], "%Y-%m-%d %H:%M:%S")
+			two_h_interval.append((dstart,dend))
+		D=travel_time_info[route_id]
+		time_windows =list(D.keys())
+		time_windows.sort()
+		mat = {}
+		for t_w in time_windows:
+			t_record = D[t_w]
+			vect=self.convert_windowInfo_to_vector(t_record)
+			start_times =list(t_record.car_start_time.values())
+			start_times.sort()
+			print (t_w)
+			print(start_times[0])
+			# start_min=math.floor(start_times[0]/20)*20
+			if two_h_interval is None:
+				import ipdb
+				ipdb.set_trace()
+			print (two_h_interval)
+
+			
+			i,time_range=self.find_time_range(two_h_interval,start_times[0])
+			if time_range not in mat.keys():
+				mat[time_range]=[]
+			mat[time_range].append(vect)
+			# print vect
+		return mat
+
 	def zerofill_missed_time_info(self,travel_times,route_id =None):
 		# 1. find min start-time and max-end time across all roud_ids
 		start_time = datetime(2100,1,1,1,0)
@@ -125,10 +199,11 @@ class kdd_data():
 					l_idx=non_zero_y_idx[left_idx]
 					r_idx=non_zero_y_idx[right_idx]
 					# if c_idx >non_zero_y_idx[right_idx]:
-					w1=0 if c_idx >non_zero_y_idx[right_idx] else float(abs(c_idx-l_idx))/float(abs(l_idx-r_idx))
+					w1=0 if c_idx >non_zero_y_idx[right_idx] else 1-float(abs(c_idx-l_idx+1))/float(abs(l_idx-r_idx+1))
 					w2=1-w1
 					assert(w1 >=0 and w2>=0 and w1<=1 and w2 <=1)
-					all_Y[c_idx]=w1*(list_Y[l_idx] +w2*list_Y[r_idx])/2.0
+					all_Y[c_idx]=w1*list_Y[l_idx] +w2*list_Y[r_idx]
+					# all_Y[c_idx]=w1*(list_Y[l_idx] +w2*list_Y[r_idx])/2.0
 		return all_Y
 		# ------------------------------------------------------------------
 
@@ -174,28 +249,12 @@ class kdd_data():
 				Y_given_interval.pop(0)
 				Y_given_interval.append(all_Y[l+X_predict_n+Y_predict_n-1])
 
-				
-			# for y in range(Y_predict_n):
-			# 	Y_given_interval.append(all_Y[l+X_predict_n+y])
-				# if all_Y[l+X_predict_n+y] ==0:
-				# 	import ipdb
-				# 	ipdb.set_trace()
 			
 			# equivalent to (20min/given interval minutes(1,5,10 typically)
 			for y in range(Y_hours_div_by_20min_n):
 				Y_20min_interval.append(np.mean(Y_given_interval[y*t20_min_to_curmin_r:(y+1)*t20_min_to_curmin_r]))
-
-			# x_n =np.array(X)
-			# print (x_n.shape)
-			# print (X)
 			X_train[l,:]=np.array(X).flatten()
-			# X_train.append(np.array(X))
-			# Y_train[l,:]=np.array(Y)
 			Y_train[l,:]=np.array(Y_20min_interval)
-		# X_return = np.array(X_train)
-		# Y_return = np.array(Y_train)
-		# import ipdb
-		# ipdb.set_trace()
 		return X_train, Y_train
 		# return np.array(X_train), np.array(Y_train)
 
@@ -242,30 +301,46 @@ class kdd_data():
 		link_count =[]
 		link_ids =list(time_recod.link_tt.keys())
 		link_ids.sort()
+		
+		link_mean_st_seconds =[]
+		link_std_st_seconds  =[]
 
-		all_link_stat={}
+		all_link_stat_tt={}
+		all_link_stat_st={}
 		for id in self.link_ids:
-			all_link_stat[id]=[]
-		l1=len(all_link_stat)
+			all_link_stat_tt[id]=[]
+			all_link_stat_st[id]=[]
+		l1=len(all_link_stat_tt)
 		for id in time_recod.link_tt:
-			all_link_stat[id]=time_recod.link_tt[id]
-		l2 =len(all_link_stat)
+			all_link_stat_tt[id]=time_recod.link_tt[id]
+			all_link_stat_st[id]=time_recod.link_st[id]
+		l2 =len(all_link_stat_tt)
 		# import ipdb
 		# ipdb.set_trace()
 		assert(l1==l2)
 
-		for id in all_link_stat:
-			value=all_link_stat[id]
+		for id in all_link_stat_tt:
+			value=all_link_stat_tt[id]
 			link_count.append(len(value))
+			link_start_times=list(all_link_stat_st[id])
+			seconds = []
+			for ldate_time in link_start_times:
+				s=timedelta(hours=ldate_time.hour,minutes=ldate_time.minute,seconds=ldate_time.second).seconds
+				seconds.append(s)
 			if len(value) == 0:
 				link_mean.append(0)
 				link_std.append(0)
+				link_mean_st_seconds.append(-1)
+				link_std_st_seconds.append(-1)
 			else:
 				link_mean.append(np.mean(value))
 				link_std.append(np.std(value))
+				link_mean_st_seconds.append(np.mean(s))
+				link_std_st_seconds.append(np.std(s))
 		# vector =[v_count,time_mean,time_std,start_day,start_hour,start_minute,mean_start_min_diff] + link_count+link_mean+link_std
 		vector =[v_count,time_mean,time_std]+self.one_hot(start_day+1,8) +self.one_hot(start_hour+1,25) \
-		+self.one_hot(start_minute+1,61)+[mean_start_min_diff] + link_count+link_mean+link_std
+				+self.one_hot(start_minute+1,61)+[mean_start_min_diff] + link_mean_st_seconds+link_std_st_seconds \
+				+[std_start_min_diff]+link_count+link_mean+link_std
 		# ipdb.set_trace()
 		# import ipdb
 		# ipdb.set_trace()
@@ -287,9 +362,10 @@ class kdd_data():
 
 			trace_start_time = each_traj[3]
 			trace_start_time = datetime.strptime(trace_start_time, "%Y-%m-%d %H:%M:%S")
+			# time_window_minute = int(math.floor(trace_start_time.minute / self.time_interval) * self.time_interval)
 			time_window_minute = int(math.floor(trace_start_time.minute / self.time_interval) * self.time_interval)
 			start_time_window = datetime(trace_start_time.year, trace_start_time.month, trace_start_time.day,
-				trace_start_time.hour, time_window_minute, 0)
+										trace_start_time.hour, time_window_minute, 0)
 			tt = float(each_traj[-1]) # travel time
 			# print i
 			if start_time_window not in travel_times[route_id].keys():
@@ -308,7 +384,9 @@ class kdd_data():
 				# print info
 				if info[0] not in t_record.link_tt.keys():
 					t_record.link_tt[info[0]]=[]
+					t_record.link_st[info[0]]=[]
 				t_record.link_tt[info[0]].append(float(info[2]))
+				t_record.link_st[info[0]].append(datetime.strptime(info[1], "%Y-%m-%d %H:%M:%S"))
 			# ipdb.set_trace()
 
 		return travel_times

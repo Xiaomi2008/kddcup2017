@@ -42,11 +42,14 @@ def train_deep_model(X_train,Y_train,model_file_prefix=None):
 	best_model = ModelCheckpoint(weight_h5_file, verbose = 1, save_best_only = True)
 	tensorboard= TensorBoard(log_dir='./logs',histogram_freq=0,write_graph=True,write_images=False)
 	history=model.fit(x=X_train,y=Y_train, epochs = 500, validation_split=0.2, callbacks = [tensorboard,best_model])
-def model_predict(X_test,output_shape):
+def model_predict(X_test,output_shape,model_file_prefix=None):
 	n,h,w,c =X_test.shape
 	# ip = Input(shape=(h, w,c))
 	input_shape =(h, w,c)
-	model_name ='sample_conv_nosuffle'
+	if model_file_prefix is not None:
+		model_name=model_file_prefix
+	else:
+		model_name ='sample_conv_nosuffle'
 	# model_name ='sample_conv'
 	weight_h5_file='./'+ model_name +'.h5'
 	ip,out=kdd_deep_models.kdd_model(input_shape,output_shape)
@@ -99,11 +102,18 @@ if __name__ == "__main__":
 	#------------------------- train single route ------------------------------------
 
 	route_id='B-3'
-	A.travel_times=A.zerofill_missed_time_info(A.travel_times,route_id)
+	travel_time_test_info=A.read_test_data()
+	mat_test=A.get_test_feature_mat(travel_time_test_info,route_id)
+	import ipdb
+	ipdb.set_trace()
+
+
+	# A.travel_times=A.zerofill_missed_time_info(A.travel_times,route_id)
 	mat =A.get_feature_matrix(A.travel_times,route_id)
 	X_train,Y_train =A.prepare_train_data(mat)
 	n,d=X_train.shape
 	time_d =int(2*60/A.time_interval)
+	saved_model_file_name =route_id +'time_estimate'
 	X_train_2D = np.reshape(X_train,(n,time_d,-1,1))
 	
 
@@ -113,12 +123,12 @@ if __name__ == "__main__":
 	
 	
 	from sklearn.utils import shuffle
-	X_train_2D,Y_train=shuffle(X_train_2D,Y_train,random_state=0)
-	train_deep_model(X_train_2D,Y_train)
+	# X_train_2D,Y_train=shuffle(X_train_2D,Y_train,random_state=0)
+	# train_deep_model(X_train_2D,Y_train,saved_model_file_name)
 
 	n,outp=Y_train.shape
 	outshape =(outp,)
-	Y_p=model_predict(X_train_2D,outshape)
+	Y_p=model_predict(X_train_2D,outshape,saved_model_file_name)
 	print("mape = {}".format(mean_absolute_error(Y_train,Y_p)))
 	print("variance score = {}".format(explained_variance_score(Y_train,Y_p)))
 
