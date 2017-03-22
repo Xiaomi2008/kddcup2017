@@ -22,14 +22,14 @@ class time_recod_data():
 			# self.link_tt(link_ids)
 class kdd_data():
 	def __init__(self):
-		self.time_interval = 1 # 10 minutes interaval
+		self.time_interval = 2 # 10 minutes interaval
 		time_file = path+'trajectories(table 5)_training'+file_suffix
 		vol_file =path+'volume(table 6)_training'+file_suffix
 		road_link_file=path+'links (table 3)'+file_suffix 
 		weathre_file =path +'weather (table 7)_test1'+file_suffix
 		traj_data,vol_data,link_ids_data=self.load_data(time_file,vol_file,road_link_file)
 		self.link_ids=self.parse_road_link_ids(link_ids_data)
-		# self.travel_times=self.format_data_in_timeInterval(traj_data,vol_data)
+		self.travel_times=self.format_data_in_timeInterval(traj_data,vol_data)
 		# self.travel_times =self.zerofill_missed_time_info(self.travel_times)
 	def read_test_data(self):
 		test_time_file = test_path+'trajectories(table 5)_test1'+file_suffix
@@ -49,11 +49,11 @@ class kdd_data():
 		time_range_day2_am =('2016-10-19 06:00:00','2016-10-19 08:00:00')
 		time_range_day2_pm =('2016-10-19 15:00:00','2016-10-19 17:00:00')
 
-		time_range_day3_am =('2016-10-20 06:00:00','2016-10-19 08:00:00')
-		time_range_day3_pm =('2016-10-20 15:00:00','2016-10-19 17:00:00')
+		time_range_day3_am =('2016-10-20 06:00:00','2016-10-20 08:00:00')
+		time_range_day3_pm =('2016-10-20 15:00:00','2016-10-20 17:00:00')
 
-		time_range_day4_am =('2016-10-21 06:00:00','2016-10-22 08:00:00')
-		time_range_day4_pm =('2016-10-21 15:00:00','2016-10-22 17:00:00')
+		time_range_day4_am =('2016-10-21 06:00:00','2016-10-21 08:00:00')
+		time_range_day4_pm =('2016-10-21 15:00:00','2016-10-21 17:00:00')
 
 		time_range_day5_am =('2016-10-22 06:00:00','2016-10-22 08:00:00')
 		time_range_day5_pm =('2016-10-22 15:00:00','2016-10-22 17:00:00')
@@ -67,7 +67,7 @@ class kdd_data():
 		time_list =[time_range_day1_am,time_range_day1_pm,time_range_day2_am,time_range_day2_pm, \
 					time_range_day3_am,time_range_day3_pm,time_range_day4_am,time_range_day4_pm, \
 					time_range_day5_am,time_range_day5_pm,time_range_day6_am,time_range_day6_pm, \
-					time_range_day7_am,time_range_day7_am]
+					time_range_day7_am,time_range_day7_pm]
 
 		# datetime.strptime(trace_start_time, "%Y-%m-%d %H:%M:%S")
 		two_h_interval =[]
@@ -94,8 +94,12 @@ class kdd_data():
 				ipdb.set_trace()
 			print (two_h_interval)
 
-			
-			i,time_range=self.find_time_range(two_h_interval,start_times[0])
+			try:
+				i,time_range=self.find_time_range(two_h_interval,start_times[0])
+			except:
+				import ipdb
+				ipdb.set_trace()
+
 			if time_range not in mat.keys():
 				mat[time_range]=[]
 			mat[time_range].append(vect)
@@ -199,8 +203,11 @@ class kdd_data():
 					l_idx=non_zero_y_idx[left_idx]
 					r_idx=non_zero_y_idx[right_idx]
 					# if c_idx >non_zero_y_idx[right_idx]:
-					w1=0 if c_idx >non_zero_y_idx[right_idx] else 1-float(abs(c_idx-l_idx+1))/float(abs(l_idx-r_idx+1))
+					w1=0 if c_idx >non_zero_y_idx[right_idx] else 1-float(abs(c_idx-l_idx))/float(abs(l_idx-r_idx))
 					w2=1-w1
+					if not (w1 >=0 and w2>=0 and w1<=1 and w2 <=1):
+						import ipdb
+						ipdb.set_trace()
 					assert(w1 >=0 and w2>=0 and w1<=1 and w2 <=1)
 					all_Y[c_idx]=w1*list_Y[l_idx] +w2*list_Y[r_idx]
 					# all_Y[c_idx]=w1*(list_Y[l_idx] +w2*list_Y[r_idx])/2.0

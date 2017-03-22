@@ -68,33 +68,33 @@ def model_predict(X_test,output_shape,model_file_prefix=None):
 def train_cross_validation_models():
 	pass
 if __name__ == "__main__":
-	A =kdd_data.kdd_data()
+	kdd_DATA =kdd_data.kdd_data()
 
-	# route_time_windows = list(A.travel_times['C-3'].keys())
+	# route_time_windows = list(kdd_DATA.travel_times['C-3'].keys())
 	# route_time_windows.sort()
 	# print route_time_windows[0:60]
 	from sklearn.metrics import mean_absolute_error
 	from sklearn.metrics import explained_variance_score
 	clf={}
-	# for route_id in A.travel_times:
+	# for route_id in kdd_DATA.travel_times:
 	# route_id='B-3'
-	# # A.travel_times=A.zerofill_missed_time_info(A.travel_times,route_id)
-	# mat =A.get_feature_matrix(A.travel_times,route_id)
-	# X_train,Y_train =A.prepare_train_data(mat)
+	# # kdd_DATA.travel_times=kdd_DATA.zerofill_missed_time_info(kdd_DATA.travel_times,route_id)
+	# mat =kdd_DATA.get_feature_matrix(kdd_DATA.travel_times,route_id)
+	# X_train,Y_train =kdd_DATA.prepare_train_data(mat)
 
 	##-------------------- concatenate all routes information and train & predict in one model----- 
 	# X_train_list =[]
 	# Y_train_list=[]
-	# A.travel_times=A.zerofill_missed_time_info(A.travel_times)
-	# for route_id in A.travel_times:
-	# 	mat =A.get_feature_matrix(A.travel_times,route_id)
-	# 	X_train_c,Y_train_c =A.prepare_train_data(mat)
+	# kdd_DATA.travel_times=kdd_DATA.zerofill_missed_time_info(kdd_DATA.travel_times)
+	# for route_id in kdd_DATA.travel_times:
+	# 	mat =kdd_DATA.get_feature_matrix(kdd_DATA.travel_times,route_id)
+	# 	X_train_c,Y_train_c =kdd_DATA.prepare_train_data(mat)
 	# 	X_train_list.append(np.expand_dims(X_train_c,axis=2))
 	# 	Y_train_list.append(Y_train_c)
 	# X_train=np.concatenate(X_train_list,axis=2)
 	# Y_train=np.concatenate(Y_train_list,axis=1)
 	# n,d,c=X_train.shape
-	# time_d =int(2*60/A.time_interval)
+	# time_d =int(2*60/kdd_DATA.time_interval)
 	# X_train_2D = np.reshape(X_train,(n,time_d,-1,c))
 
 	#----------------------------------------------------------------------------------------
@@ -102,17 +102,16 @@ if __name__ == "__main__":
 	#------------------------- train single route ------------------------------------
 
 	route_id='B-3'
-	travel_time_test_info=A.read_test_data()
-	mat_test=A.get_test_feature_mat(travel_time_test_info,route_id)
-	import ipdb
-	ipdb.set_trace()
+	# travel_time_test_info=kdd_data.read_test_data()
+	# mat_test=kdd_data.get_test_feature_mat(travel_time_test_info,route_id)
+	# import ipdb
+	# ipdb.set_trace()
 
-
-	# A.travel_times=A.zerofill_missed_time_info(A.travel_times,route_id)
-	mat =A.get_feature_matrix(A.travel_times,route_id)
-	X_train,Y_train =A.prepare_train_data(mat)
+	kdd_DATA.travel_times=kdd_DATA.zerofill_missed_time_info(kdd_DATA.travel_times,route_id)
+	mat =kdd_DATA.get_feature_matrix(kdd_DATA.travel_times,route_id)
+	X_train,Y_train =kdd_DATA.prepare_train_data(mat)
 	n,d=X_train.shape
-	time_d =int(2*60/A.time_interval)
+	time_d =int(2*60/kdd_DATA.time_interval)
 	saved_model_file_name =route_id +'time_estimate'
 	X_train_2D = np.reshape(X_train,(n,time_d,-1,1))
 	
@@ -124,7 +123,7 @@ if __name__ == "__main__":
 	
 	from sklearn.utils import shuffle
 	# X_train_2D,Y_train=shuffle(X_train_2D,Y_train,random_state=0)
-	# train_deep_model(X_train_2D,Y_train,saved_model_file_name)
+	train_deep_model(X_train_2D,Y_train,saved_model_file_name)
 
 	n,outp=Y_train.shape
 	outshape =(outp,)
