@@ -9,6 +9,34 @@ from sklearn.cross_validation import cross_val_predict
 file_suffix = '.csv'
 path = '../../kdd_cup_data/dataSets/training/'  # set the data directory
 test_path ='../../kdd_cup_data/dataSets/testing_phase1/'
+
+
+time_range_day1_am =('2016-10-18 06:00:00','2016-10-18 08:00:00')
+time_range_day1_pm =('2016-10-18 15:00:00','2016-10-18 17:00:00')
+
+time_range_day2_am =('2016-10-19 06:00:00','2016-10-19 08:00:00')
+time_range_day2_pm =('2016-10-19 15:00:00','2016-10-19 17:00:00')
+
+time_range_day3_am =('2016-10-20 06:00:00','2016-10-20 08:00:00')
+time_range_day3_pm =('2016-10-20 15:00:00','2016-10-20 17:00:00')
+
+time_range_day4_am =('2016-10-21 06:00:00','2016-10-21 08:00:00')
+time_range_day4_pm =('2016-10-21 15:00:00','2016-10-21 17:00:00')
+
+time_range_day5_am =('2016-10-22 06:00:00','2016-10-22 08:00:00')
+time_range_day5_pm =('2016-10-22 15:00:00','2016-10-22 17:00:00')
+
+time_range_day6_am =('2016-10-23 06:00:00','2016-10-23 08:00:00')
+time_range_day6_pm =('2016-10-23 15:00:00','2016-10-23 17:00:00')
+
+time_range_day7_am =('2016-10-24 06:00:00','2016-10-24 08:00:00')
+time_range_day7_pm =('2016-10-24 15:00:00','2016-10-24 17:00:00')
+
+test_time_list =[time_range_day1_am,time_range_day1_pm,time_range_day2_am,time_range_day2_pm, \
+					time_range_day3_am,time_range_day3_pm,time_range_day4_am,time_range_day4_pm, \
+					time_range_day5_am,time_range_day5_pm,time_range_day6_am,time_range_day6_pm, \
+					time_range_day7_am,time_range_day7_pm]
+
 class time_recod_data():
 	def __init__(self):
 		self.link_tt={}
@@ -21,8 +49,11 @@ class time_recod_data():
 			self.link_st[l_id] =[]
 			# self.link_tt(link_ids)
 class kdd_data():
-	def __init__(self):
-		self.time_interval = 2 # 10 minutes interaval
+	def __init__(self,interval =5):
+		self.time_interval = interval # 10 minutes interaval
+		
+		# self.travel_times =self.zerofill_missed_time_info(self.travel_times)
+	def read_train_data(self):
 		time_file = path+'trajectories(table 5)_training'+file_suffix
 		vol_file =path+'volume(table 6)_training'+file_suffix
 		road_link_file=path+'links (table 3)'+file_suffix 
@@ -30,7 +61,7 @@ class kdd_data():
 		traj_data,vol_data,link_ids_data=self.load_data(time_file,vol_file,road_link_file)
 		self.link_ids=self.parse_road_link_ids(link_ids_data)
 		self.travel_times=self.format_data_in_timeInterval(traj_data,vol_data)
-		# self.travel_times =self.zerofill_missed_time_info(self.travel_times)
+
 	def read_test_data(self):
 		test_time_file = test_path+'trajectories(table 5)_test1'+file_suffix
 		test_vol_file = test_path+'trajectories(table 5)_test1'+file_suffix
@@ -43,37 +74,13 @@ class kdd_data():
 			if time_range[0] <=start_time and time_range[1] >start_time:
 				return i , time_range[0]
 	def get_test_feature_mat(self,travel_time_info,route_id):
-		time_range_day1_am =('2016-10-18 06:00:00','2016-10-18 08:00:00')
-		time_range_day1_pm =('2016-10-18 15:00:00','2016-10-18 17:00:00')
-
-		time_range_day2_am =('2016-10-19 06:00:00','2016-10-19 08:00:00')
-		time_range_day2_pm =('2016-10-19 15:00:00','2016-10-19 17:00:00')
-
-		time_range_day3_am =('2016-10-20 06:00:00','2016-10-20 08:00:00')
-		time_range_day3_pm =('2016-10-20 15:00:00','2016-10-20 17:00:00')
-
-		time_range_day4_am =('2016-10-21 06:00:00','2016-10-21 08:00:00')
-		time_range_day4_pm =('2016-10-21 15:00:00','2016-10-21 17:00:00')
-
-		time_range_day5_am =('2016-10-22 06:00:00','2016-10-22 08:00:00')
-		time_range_day5_pm =('2016-10-22 15:00:00','2016-10-22 17:00:00')
-
-		time_range_day6_am =('2016-10-23 06:00:00','2016-10-23 08:00:00')
-		time_range_day6_pm =('2016-10-23 15:00:00','2016-10-23 17:00:00')
-
-		time_range_day7_am =('2016-10-24 06:00:00','2016-10-24 08:00:00')
-		time_range_day7_pm =('2016-10-24 15:00:00','2016-10-24 17:00:00')
-
-		time_list =[time_range_day1_am,time_range_day1_pm,time_range_day2_am,time_range_day2_pm, \
-					time_range_day3_am,time_range_day3_pm,time_range_day4_am,time_range_day4_pm, \
-					time_range_day5_am,time_range_day5_pm,time_range_day6_am,time_range_day6_pm, \
-					time_range_day7_am,time_range_day7_pm]
+		
 
 		# datetime.strptime(trace_start_time, "%Y-%m-%d %H:%M:%S")
 		two_h_interval =[]
 		dstart =[]
 		dend=[]
-		for time_str in time_list:
+		for time_str in test_time_list:
 			dstart =datetime.strptime(time_str[0], "%Y-%m-%d %H:%M:%S")
 			dend   =datetime.strptime(time_str[1], "%Y-%m-%d %H:%M:%S")
 			two_h_interval.append((dstart,dend))
@@ -86,13 +93,17 @@ class kdd_data():
 			vect=self.convert_windowInfo_to_vector(t_record)
 			start_times =list(t_record.car_start_time.values())
 			start_times.sort()
-			print (t_w)
-			print(start_times[0])
+			if len(start_times)==0:
+				start_times.append(t_w)
+				# import ipdb
+				# ipdb.set_trace()
+			# print (t_w)
+			# print(start_times[0])
 			# start_min=math.floor(start_times[0]/20)*20
 			if two_h_interval is None:
 				import ipdb
 				ipdb.set_trace()
-			print (two_h_interval)
+			# print (two_h_interval)
 
 			try:
 				i,time_range=self.find_time_range(two_h_interval,start_times[0])
@@ -106,21 +117,22 @@ class kdd_data():
 			# print vect
 		return mat
 
-	def zerofill_missed_time_info(self,travel_times,route_id =None):
+	def zerofill_missed_time_info(self,travel_times,route_id =None,start_time=None,end_time =None):
 		# 1. find min start-time and max-end time across all roud_ids
-		start_time = datetime(2100,1,1,1,0)
-		end_time  =datetime(1900,1,1,1,0)
-		if route_id is not None:
-			time_windows  =list(travel_times[route_id].keys())
-			time_windows.sort()
-			start_time = time_windows[0] if start_time > time_windows[0] else start_time
-			end_time = time_windows[-1] if end_time < time_windows[-1] else end_time
-		else:
-			for r_id in travel_times.keys():
-				time_windows  =list(travel_times[r_id].keys())
+		if start_time==None or end_time ==None:
+			start_time = datetime(2100,1,1,1,0)
+			end_time  =datetime(1900,1,1,1,0)
+			if route_id is not None:
+				time_windows  =list(travel_times[route_id].keys())
 				time_windows.sort()
 				start_time = time_windows[0] if start_time > time_windows[0] else start_time
 				end_time = time_windows[-1] if end_time < time_windows[-1] else end_time
+			else:
+				for r_id in travel_times.keys():
+					time_windows  =list(travel_times[r_id].keys())
+					time_windows.sort()
+					start_time = time_windows[0] if start_time > time_windows[0] else start_time
+					end_time = time_windows[-1] if end_time < time_windows[-1] else end_time
 		current_time = start_time
 
 		# 2 . get all routes link ids
@@ -129,8 +141,16 @@ class kdd_data():
 			first_time =  next(iter(travel_times[rd_ids]))
 			link_tt_ids[rd_ids]=list(travel_times[rd_ids][first_time].link_tt.keys())
 		added_time =timedelta(minutes=self.time_interval)
-		while current_time <= end_time:
-			for r_id in travel_times.keys():
+		if route_id is None:
+			r_ids =list(travel_times.keys())
+		else:
+			r_ids=[route_id]
+			print (r_ids)
+		print('start to fill the missed time interval ... data')
+		while current_time < end_time:
+			# for r_id in travel_times.keys():
+			for r_id in r_ids:
+				# print (r_id)
 				time_windows  =list(travel_times[r_id].keys())
 				if current_time not in time_windows:
 					t_record =time_recod_data()
@@ -213,15 +233,22 @@ class kdd_data():
 					# all_Y[c_idx]=w1*(list_Y[l_idx] +w2*list_Y[r_idx])/2.0
 		return all_Y
 		# ------------------------------------------------------------------
+	def prepare_test_data(self,mat):
+		# interpolte (zero fills to 2 hours)
+		h,w=mat.shape
+		X_test_hour  = 2
+		X_test_n     =   int(math.floor(X_train_hourse*60/self.time_interval))
+		test_x =np.zeros()
+
 
 	def prepare_train_data(self,time_features):
-		X_train_hourse 				=	2
-		prediction_hourse 			=	2
+		X_train_hours				=	2
+		prediction_hours			=	2
 		prediction_interval_minutes =	self.time_interval
-		X_predict_n                 =   int(math.floor(X_train_hourse*60/self.time_interval))
-		Y_predict_n            		= 	int(math.floor(prediction_hourse*60 /prediction_interval_minutes))
-		Y_hours_div_by_20min_n      = 	int(math.floor(prediction_hourse*60 /20))
-		len_time_windows_hours 		= 	int(math.floor((X_train_hourse+prediction_hourse)*60/prediction_interval_minutes))
+		X_predict_n                 =   int(math.floor(X_train_hours*60/self.time_interval))
+		Y_predict_n            		= 	int(math.floor(prediction_hours*60 /prediction_interval_minutes))
+		Y_hours_div_by_20min_n      = 	int(math.floor(prediction_hours*60 /20))
+		len_time_windows_hours 		= 	int(math.floor((X_train_hours+prediction_hours)*60/prediction_interval_minutes))
 		len_f =len(time_features)
 		sample_n =int(len_f-len_time_windows_hours+1)
 		lx =len(time_features[0])
@@ -259,7 +286,13 @@ class kdd_data():
 			
 			# equivalent to (20min/given interval minutes(1,5,10 typically)
 			for y in range(Y_hours_div_by_20min_n):
-				Y_20min_interval.append(np.mean(Y_given_interval[y*t20_min_to_curmin_r:(y+1)*t20_min_to_curmin_r]))
+				Y_range = Y_given_interval[y*t20_min_to_curmin_r:(y+1)*t20_min_to_curmin_r]
+				non_zero_y =[Y_range[i] for i, e in enumerate(Y_range) if e!=0]
+				if len(non_zero_y)==0:
+					non_zero_y.append(0)
+				Y_20min_interval.append(np.mean(non_zero_y))
+
+				# Y_20min_interval.append(np.mean(Y_given_interval[y*t20_min_to_curmin_r:(y+1)*t20_min_to_curmin_r]))
 			X_train[l,:]=np.array(X).flatten()
 			Y_train[l,:]=np.array(Y_20min_interval)
 		return X_train, Y_train
