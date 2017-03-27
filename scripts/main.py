@@ -39,23 +39,51 @@ test_time_list =[time_range_day1_am,time_range_day1_pm,time_range_day2_am,time_r
 					time_range_day5_am,time_range_day5_pm,time_range_day6_am,time_range_day6_pm, \
 					time_range_day7_am,time_range_day7_pm]
 
-def train_deep_model(X_train,Y_train,model_file_prefix=None):
+deep_models={}
+deep_models['gated_cnn_1']=kdd_deep_models.kdd_gated_model
+deep_models['default_model']=deep_models['gated_cnn_1']
+# deep_models['gated_cnn']=kdd_deep_models.kdd_gated_model
+def get_model_and_savedFile(args):
+	model = deep_models[args.model]
+	# print (args)
+	phase =args.phase
+	model_save_file ='time_'+args.model +'_'+args.route_id +'_' +'I'+str(args.interval)
+	combined_routeID_features =''
+	if hasattr(args,'clist'):
+		for r_id in clist:
+			combined_routeID_features='-'+combined_routeID_features +r_id
+		combined_routeID_features='_CombineF'+'('+combined_routeID_features +')'
+	model_save_file =model_save_file +combined_routeID_features+'.h5'
+	return model, model_save_file
+
+
+# def train_deep_model(X_train,Y_train,model_file_prefix=None):
+def train_deep_model(X_train,Y_train,model_save_file=None,model_create_Func=None):
 	# row =75
 	# col =24
 	n,h,w,c =X_train.shape
 	# ip = Input(shape=(h, w,c))
 	input_shape =(h, w,c)
-	if model_file_prefix is not None:
-		model_name=model_file_prefix
+	# if model_file_prefix is not None:
+	# 	model_name=model_file_prefix
+	# else:
+	# 	model_name ='sample_conv_nosuffle'
+		# model_name ='sample_conv'
+	if model_save_file is not None:
+		model_name=model_save_file
 	else:
-		model_name ='sample_conv_nosuffle'
+		model_name ='sample_conv.h5'
 		# model_name ='sample_conv'
 	n,out_n =Y_train.shape
 	output_shape=(out_n,)
-	ip,out=kdd_deep_models.kdd_model(input_shape,output_shape)
+	# ip,out=kdd_deep_models.kdd_model(input_shape,output_shape)
+	if model_create_Func is None:
+		ip,out=kdd_deep_models.kdd_gated_model(input_shape,output_shape)
+	else:
+		ip,out=model_create_Func(input_shape,output_shape)
 	model=Model(ip,out)
 
-	weight_h5_file='./'+ model_name +'.h5'
+	weight_h5_file='./'+ model_name
 	if os.path.isfile(weight_h5_file):
 		try:
 			model.load_weights(weight_h5_file)
@@ -65,28 +93,33 @@ def train_deep_model(X_train,Y_train,model_file_prefix=None):
 	# from sklearn.model_selection import KFold
 	# f = KFold(n_splits=2)
 	# optimizer =RMSprop(lr = 1e-4)
-	optimizer =Adam(lr=0.0001, beta_1=0.9, beta_2=0.999, epsilon=1e-08, decay=0.00001)
+	optimizer =Adam(lr=0.001, beta_1=0.9, beta_2=0.999, epsilon=1e-08, decay=0.00001)
 	model.compile(optimizer=optimizer, loss='mean_absolute_percentage_error', metrics=[metrics.mape])
 	model.summary()
 	best_model = ModelCheckpoint(weight_h5_file, verbose = 1, save_best_only = True)
 	tensorboard= TensorBoard(log_dir='./logs',histogram_freq=0,write_graph=True,write_images=False)
-	history=model.fit(x=X_train,y=Y_train, epochs = 100, validation_split=0.05, callbacks = [tensorboard,best_model])
-def model_predict(X_test,output_shape,model_file_prefix=None):
+	history=model.fit(x=X_train,y=Y_train, epochs = 600, validation_split=0.2, callbacks = [tensorboard,best_model])
+def model_predict(X_test,output_shape,model_save_file=None,model_create_Func=None):
 	global previous_model_file
 	global previous_model
 	n,h,w,c =X_test.shape
 	# ip = Input(shape=(h, w,c))
 	input_shape =(h, w,c)
-	if model_file_prefix is not None:
-		model_name=model_file_prefix
+	if model_save_file is not None:
+		model_name=model_save_file
 	else:
-		model_name ='sample_conv_nosuffle'
+		model_name ='sample_conv.h5'
 	# model_name ='sample_conv'
-	weight_h5_file='./'+ model_name +'.h5'
+	weight_h5_file='./'+ model_name
 	if previous_model_file is None or previous_model_file != model_name:
 		print("model predicting ....")
-		ip,out=kdd_deep_models.kdd_model(input_shape,output_shape)
+		if model_create_Func is None:
+			ip,out=kdd_deep_models.kdd_gated_model(input_shape,output_shape)
+		else:
+			ip,out=model_create_Func(input_shape,output_shape)
 		model=Model(ip,out)
+		# ip,out=kdd_deep_models.kdd_gated_model(input_shape,output_shape)
+		# model=Model(ip,out)
 		previous_model_file =model_file_prefix
 		previous_model =model
 		print("model predicting ...." +weight_h5_file)
@@ -133,11 +166,17 @@ def write_submit_traj_file(predict_result):
 	fw.close()
 if __name__ == "__main__":
 	parser =argparse.ArgumentParser()
-	parser.add_argument("-p","--phase", help="train of test",default='train')
+	parser.add_argument("-p","--phase", help="train or test",default='train')
 	parser.add_argument("-r","--route_id", help="given a route_id for model to train",default='B-3')
 	parser.add_argument("-i","--interval", help="feature inverval minutes",type=int,default=5)
+	parser.add_argument("-c","--combine_features", nargs='*',dest='clist', help="list of combine features",default=argparse.SUPPRESS)
+	parser.add_argument("-m","--model", help="select a deep model",default='default_model')
 	args=parser.parse_args()
+	print (args)
 	phase =args.phase
+	if hasattr(args,'clist'):
+		print (args.clist)
+	# os._exit(0)
 	kdd_DATA =kdd_data.kdd_data(args.interval)
 	# route_time_windows = list(kdd_DATA.travel_times['C-3'].keys())
 	# route_time_windows.sort()
@@ -145,7 +184,7 @@ if __name__ == "__main__":
 	from sklearn.metrics import mean_absolute_error
 	from sklearn.metrics import explained_variance_score
 	clf={}
-	# for route_id in kdd_DATA.travel_times:
+	# for route_id in kdd_DATA.travel_times: 
 	# route_id='B-3'
 	# # kdd_DATA.travel_times=kdd_DATA.zerofill_missed_time_info(kdd_DATA.travel_times,route_id)
 	# mat =kdd_DATA.get_feature_matrix(kdd_DATA.travel_times,route_id)
@@ -176,6 +215,7 @@ if __name__ == "__main__":
 	
 	route_ids=['A-2','A-3','C-1','C-3','B-1','B-3']
 
+
 	# route_ids=['A-2']
 	if phase =='test':
 		# route_id='A-3'
@@ -189,43 +229,61 @@ if __name__ == "__main__":
 				end_time=datetime.strptime(tt[1],"%Y-%m-%d %H:%M:%S")
 				travel_time_test_info=kdd_DATA.zerofill_missed_time_info(travel_time_test_info,route_id,
 																	start_time,end_time)
-			mat_test=kdd_DATA.get_test_feature_mat(travel_time_test_info,route_id)
+			mat_test=kdd_DATA.get_test_feature_mat(travel_time_test_info,route_id,kdd_DATA.weather_test)
 			time_list =list(mat_test.keys())
 			time_list.sort()
-			saved_model_file_name =route_id +'_time_estimate_'+ 'model_2_'+str(kdd_DATA.time_interval)
-			# saved_model_file_name =route_id +'time_estimate' #+str(kdd_DATA.time_interval)	
+			saved_model_file_name =route_id +'_time_estimate_'+ 'gated_2_embed_k5_i'+str(kdd_DATA.time_interval)
+			# saved_model_file_name =route_id +'time_estimate' #+str(kdd_DATA.time_interval)
+			args.route_id =route_id
+			model_create_Func,save_file=get_model_and_savedFile(args)	
 			for i in range(len(time_list)):
 				test_X = np.array(mat_test[time_list[i]])
 				test_X=np.expand_dims(test_X,axis=2)
 				test_X=np.expand_dims(test_X,axis=0)
 				num_out_put =[6]
-				predict_result[route_id][time_list[i]]=model_predict(test_X,num_out_put,saved_model_file_name)
+				predict_result[route_id][time_list[i]]=model_predict(test_X,num_out_put,save_file,model_create_Func)
 		write_submit_traj_file(predict_result)
 
 	# import ipdb
 	# ipdb.set_trace()
 	if phase =='train':
 		# route_id='A-2'
+		model_create_Func,save_file=get_model_and_savedFile(args)
 		route_id =args.route_id
 		# kdd_DATA.travel_times=kdd_DATA.format_data_in_timeInterval(traj_data,vol_data)
 		kdd_DATA.read_train_data()
 		kdd_DATA.travel_times=kdd_DATA.zerofill_missed_time_info(travel_times=kdd_DATA.travel_times,route_id=route_id)
-		mat =kdd_DATA.get_feature_matrix(kdd_DATA.travel_times,route_id)
+		mat =kdd_DATA.get_feature_matrix(kdd_DATA.travel_times,route_id,kdd_DATA.weather_train)
 		X_train,Y_train =kdd_DATA.prepare_train_data(mat)
 		n,d=X_train.shape
 		time_d =int(2*60/kdd_DATA.time_interval)
-		saved_model_file_name =route_id +'_time_estimate_' +'model_2_'+ str(kdd_DATA.time_interval)
+		# saved_model_file_name =route_id +'_time_estimate_' +'gated_2_embed_k5_i'+ str(kdd_DATA.time_interval)
 		X_train_2D = np.reshape(X_train,(n,time_d,-1,1))
 		
 		from sklearn.utils import shuffle
-		# X_train_2D,Y_train=shuffle(X_train_2D,Y_train,random_state=0)
-		train_deep_model(X_train_2D,Y_train,saved_model_file_name)
+		X_train_2D,Y_train=shuffle(X_train_2D,Y_train,random_state=0)
+		# train_deep_model(X_train_2D,Y_train,saved_model_file_name)
+		train_deep_model(X_train_2D,Y_train,save_file,model_create_Func)
 
 		n,outp=Y_train.shape
 		outshape =(outp,)
 		Y_p=model_predict(X_train_2D,outshape,saved_model_file_name)
 		print("mape = {}".format(mean_absolute_error(Y_train,Y_p)))
 		print("variance score = {}".format(explained_variance_score(Y_train,Y_p)))
+
+		# X_train_list =[]
+		# Y_train_list=[]
+		# kdd_DATA.travel_times=kdd_DATA.zerofill_missed_time_info(kdd_DATA.travel_times)
+		# for route_id in ['C-1','B-1','C-3','B-3']:
+		# 	mat =kdd_DATA.get_feature_matrix(kdd_DATA.travel_times,route_id)
+		# 	X_train_c,Y_train_c =kdd_DATA.prepare_train_data(mat)
+		# 	X_train_list.append(np.expand_dims(X_train_c,axis=2))
+		# 	Y_train_list.append(Y_train_c)
+		# X_train=np.concatenate(X_train_list,axis=2)
+		# Y_train=np.concatenate(Y_train_list,axis=1)
+		# n,d,c=X_train.shape
+		# time_d =int(2*60/kdd_DATA.time_interval)
+		# X_train_2D = np.reshape(X_train,(n,time_d,-1,c))
 
 
 

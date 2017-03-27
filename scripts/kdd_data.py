@@ -43,6 +43,8 @@ class time_recod_data():
 		self.link_st={}
 		self.car_traj_time={}
 		self.car_start_time={}
+		self.weather={}
+		# self.
 	def zero_init(self,link_ids):
 		for l_id in link_ids:
 			self.link_tt[l_id] =[]
@@ -57,23 +59,28 @@ class kdd_data():
 		time_file = path+'trajectories(table 5)_training'+file_suffix
 		vol_file =path+'volume(table 6)_training'+file_suffix
 		road_link_file=path+'links (table 3)'+file_suffix 
-		weathre_file =path +'weather (table 7)_test1'+file_suffix
-		traj_data,vol_data,link_ids_data=self.load_data(time_file,vol_file,road_link_file)
+		weather_file =path +'weather (table 7)_training_update'+file_suffix
+		traj_data,vol_data,link_ids_data,weather_records=self.load_data(time_file,vol_file,road_link_file,weather_file)
 		self.link_ids=self.parse_road_link_ids(link_ids_data)
+		self.weather_train =self.parse_weather_info(weather_records)
 		self.travel_times=self.format_data_in_timeInterval(traj_data,vol_data)
+		
 
 	def read_test_data(self):
 		test_time_file = test_path+'trajectories(table 5)_test1'+file_suffix
-		test_vol_file = test_path+'trajectories(table 5)_test1'+file_suffix
+		test_vol_file = test_path+'volume(table 6)_test1'+file_suffix
 		road_link_file=path+'links (table 3)'+file_suffix
-		traj_data,vol_data,link_ids_data=self.load_data(test_time_file,test_vol_file,road_link_file)
+		weather_file =test_path +'weather (table 7)_test1'+file_suffix
+		traj_data,vol_data,link_ids_data,weather_records=self.load_data(test_time_file,test_vol_file,road_link_file,weather_file)
+		self.link_ids=self.parse_road_link_ids(link_ids_data)
+		self.weather_test=self.parse_weather_info(weather_records)
 		return self.format_data_in_timeInterval(traj_data,vol_data)
 	
 	def find_time_range(self,two_h_interval_list,start_time):
 		for i,time_range in enumerate(two_h_interval_list):
 			if time_range[0] <=start_time and time_range[1] >start_time:
 				return i , time_range[0]
-	def get_test_feature_mat(self,travel_time_info,route_id):
+	def get_test_feature_mat(self,travel_time_info,route_id,weather_data):
 		
 
 		# datetime.strptime(trace_start_time, "%Y-%m-%d %H:%M:%S")
@@ -90,7 +97,7 @@ class kdd_data():
 		mat = {}
 		for t_w in time_windows:
 			t_record = D[t_w]
-			vect=self.convert_windowInfo_to_vector(t_record)
+			vect=self.convert_windowInfo_to_vector(t_record,t_w,weather_data)
 			start_times =list(t_record.car_start_time.values())
 			start_times.sort()
 			if len(start_times)==0:
@@ -156,7 +163,7 @@ class kdd_data():
 					t_record =time_recod_data()
 					t_record.zero_init(link_tt_ids[rd_ids])
 					travel_times[r_id][current_time] =t_record
-					print (current_time)
+					# print (current_time)
 			current_time+=added_time
 		return travel_times
 	def one_hot(self,num,length):
@@ -171,8 +178,33 @@ class kdd_data():
 		# print (len(link_ids))
 		return link_ids
 
+	def parse_weather_info(self,weather_data):
+		weather_dict={}
+		for i in range(len(weather_data)):
+			each_3h_weather =weather_data[i].replace('"', '').split(',')
+			t=each_3h_weather[0]
+			year_m_d = datetime.strptime(t, "%Y-%m-%d")
+			hour =each_3h_weather[1]
+			# print (year_m_d)
+			# print (hour)
+			time_key =datetime(int(year_m_d.year),int(year_m_d.month),int(year_m_d.day),int(hour),0,0)
+			data =[each_3h_weather[i] for i in range(2,len(each_3h_weather))]
+			weather_dict[time_key]=data
+		return weather_dict
+	def get_weather_data(self,weather_data,current_time):
+		w_times=list(weather_data.keys())
+		w_times.sort()
+		for i,w_time in enumerate(w_times):
+			if i<len(w_times)-1:
+				if current_time >= w_time and current_time <w_times[i+1]:
+					weather_feature = weather_data[w_time] +weather_data[w_times[i+1]]
+					return weather_feature
+		weather_feature = weather_data[w_time] +weather_data[w_time]
+		return weather_feature
+
+
 		
-	def load_data(self,time_file,vol_file,road_link_file):
+	def load_data(self,time_file,vol_file,road_link_file,weather_file):
 		# Step 1: Load trajectories
 		fr = open(time_file, 'r')
 		fr.readline()  # skip the header
@@ -188,9 +220,14 @@ class kdd_data():
 		fr.readline() # skip the header
 		link_ids=fr.readlines()
 		fr.close()
-		return traj_data, vol_data, link_ids
 
-	def get_feature_matrix(self,travel_times_struct,route_id):
+		fr =open(weather_file,'r')
+		fr.readline() # skip the header
+		weather_data=fr.readlines()
+		fr.close()
+		return traj_data, vol_data, link_ids, weather_data
+
+	def get_feature_matrix(self,travel_times_struct,route_id,weather_data):
 		D=travel_times_struct[route_id]
 		# import ipdb
 		# ipdb.set_trace()
@@ -198,7 +235,7 @@ class kdd_data():
 		time_windows.sort()
 		mat=[]
 		for t_w in time_windows:
-			vect=self.convert_windowInfo_to_vector(D[t_w])
+			vect=self.convert_windowInfo_to_vector(D[t_w],t_w,weather_data)
 			mat.append(vect)
 			# print vect
 		return mat
@@ -233,12 +270,12 @@ class kdd_data():
 					# all_Y[c_idx]=w1*(list_Y[l_idx] +w2*list_Y[r_idx])/2.0
 		return all_Y
 		# ------------------------------------------------------------------
-	def prepare_test_data(self,mat):
-		# interpolte (zero fills to 2 hours)
-		h,w=mat.shape
-		X_test_hour  = 2
-		X_test_n     =   int(math.floor(X_train_hourse*60/self.time_interval))
-		test_x =np.zeros()
+	# def prepare_test_data(self,mat):
+	# 	# interpolte (zero fills to 2 hours)
+	# 	h,w=mat.shape
+	# 	X_test_hour  = 2
+	# 	X_test_n     =   int(math.floor(X_train_hourse*60/self.time_interval))
+	# 	test_x =np.zeros()
 
 
 	def prepare_train_data(self,time_features):
@@ -273,8 +310,8 @@ class kdd_data():
 			if l ==0:
 				for i in range(X_predict_n):
 					X.append(time_features[l+i])
-					for y in range(Y_predict_n):
-						Y_given_interval.append(all_Y[l+X_predict_n+y])
+				for y in range(Y_predict_n):
+					Y_given_interval.append(all_Y[l+X_predict_n+y])
 					# import ipdb
 					# ipdb.set_trace()
 			else:
@@ -299,7 +336,7 @@ class kdd_data():
 		# return np.array(X_train), np.array(Y_train)
 
 
-	def convert_windowInfo_to_vector(self,time_recod):
+	def convert_windowInfo_to_vector(self,time_recod,time_start,weather_data):
 		V=list(time_recod.car_traj_time.values())
 		# print (type(V))
 		v_count =len(V)
@@ -377,17 +414,16 @@ class kdd_data():
 				link_std.append(np.std(value))
 				link_mean_st_seconds.append(np.mean(s))
 				link_std_st_seconds.append(np.std(s))
+		weather_feature=self.get_weather_data(weather_data,time_start)
 		# vector =[v_count,time_mean,time_std,start_day,start_hour,start_minute,mean_start_min_diff] + link_count+link_mean+link_std
 		vector =[v_count,time_mean,time_std]+self.one_hot(start_day+1,8) +self.one_hot(start_hour+1,25) \
 				+self.one_hot(start_minute+1,61)+[mean_start_min_diff] + link_mean_st_seconds+link_std_st_seconds \
-				+[std_start_min_diff]+link_count+link_mean+link_std
+				+[std_start_min_diff]+link_count+link_mean+link_std+weather_feature
 		# ipdb.set_trace()
 		# import ipdb
 		# ipdb.set_trace()
 		# print vector
 		return vector
-
-
 
 	def format_data_in_timeInterval(self,traj_data,vol_data):
 		travel_times={}
@@ -413,6 +449,7 @@ class kdd_data():
 			t_record =travel_times[route_id][start_time_window]
 			t_record.car_traj_time[each_traj[2]]=tt # each_traj[2] is CardID!
 			t_record.car_start_time[each_traj[2]]=trace_start_time
+			# t_record.weather=self.parse_weather_info()
 			# print travel_times[route_id][start_time_window].car_traj_time[each_traj[2]]
 			link_seq =each_traj[4]
 			# print link_seq
