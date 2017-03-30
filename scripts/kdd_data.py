@@ -6,6 +6,7 @@ import sklearn.cross_validation
 import sklearn.metrics
 from sklearn import linear_model
 from sklearn.cross_validation import cross_val_predict
+import ipdb
 file_suffix = '.csv'
 path = '../../kdd_cup_data/dataSets/training/'  # set the data directory
 test_path ='../../kdd_cup_data/dataSets/testing_phase1/'
@@ -95,6 +96,8 @@ class kdd_data():
 		time_windows =list(D.keys())
 		time_windows.sort()
 		mat = {}
+		# import ipdb
+		# ipdb.set_trace()
 		for t_w in time_windows:
 			t_record = D[t_w]
 			vect=self.convert_windowInfo_to_vector(t_record,t_w,weather_data)
@@ -123,23 +126,8 @@ class kdd_data():
 			mat[time_range].append(vect)
 			# print vect
 		return mat
+	def select_timewindos_data_and_zerofill(self,travel_times,route_id =None,start_time=None,end_time =None):
 
-	def zerofill_missed_time_info(self,travel_times,route_id =None,start_time=None,end_time =None):
-		# 1. find min start-time and max-end time across all roud_ids
-		if start_time==None or end_time ==None:
-			start_time = datetime(2100,1,1,1,0)
-			end_time  =datetime(1900,1,1,1,0)
-			if route_id is not None:
-				time_windows  =list(travel_times[route_id].keys())
-				time_windows.sort()
-				start_time = time_windows[0] if start_time > time_windows[0] else start_time
-				end_time = time_windows[-1] if end_time < time_windows[-1] else end_time
-			else:
-				for r_id in travel_times.keys():
-					time_windows  =list(travel_times[r_id].keys())
-					time_windows.sort()
-					start_time = time_windows[0] if start_time > time_windows[0] else start_time
-					end_time = time_windows[-1] if end_time < time_windows[-1] else end_time
 		current_time = start_time
 
 		# 2 . get all routes link ids
@@ -153,6 +141,92 @@ class kdd_data():
 		else:
 			r_ids=[route_id]
 			print (r_ids)
+
+
+ 
+		
+		travel_times_new={}
+		for r_id in r_ids:
+			travel_times_new[r_id] = {}
+			time_windows  =list(travel_times[r_id].keys())
+			#print(time_windows)
+			for temp_time_window in time_windows:
+				if temp_time_window.time() < end_time.time() and temp_time_window.time() >= start_time.time():
+					temp_object = travel_times[r_id][temp_time_window]
+					travel_times_new[r_id][temp_time_window] = temp_object
+			#print(test)
+			print(travel_times_new[r_id])
+		travel_times = travel_times_new
+
+		print('start to fill the missed time interval ... data')
+		while current_time < end_time:
+			# for r_id in travel_times.keys():
+			for r_id in r_ids:
+				# print (r_id)
+				time_windows  =list(travel_times[r_id].keys())   # this returns the time windows in the test data for each combination 'r_id'
+				#print(time_windows)
+
+				if current_time not in time_windows:
+					t_record =time_recod_data()
+					#print(current_time)
+					t_record.zero_init(link_tt_ids[rd_ids])
+					travel_times[r_id][current_time] =t_record
+					#print (current_time)
+			current_time+=added_time
+		return travel_times	
+	def zerofill_missed_time_info(self,travel_times,input_route_ids=None,fill_route_ids =None,start_time=None,end_time =None,phase='train'):
+		# 1. find min start-time and max-end time across all roud_ids
+		# import ipdb
+		# ipdb.set_trace()
+		if start_time==None or end_time ==None:
+			start_time = datetime(2100,1,1,1,0)
+			end_time  =datetime(1900,1,1,1,0)
+			if input_route_ids is not None:
+				r_list =input_route_ids
+			else:
+				r_list =travel_times.keys()
+			for r_id in r_list:
+				time_windows  =list(travel_times[r_id].keys())
+				time_windows.sort()
+				start_time = time_windows[0] if start_time > time_windows[0] else start_time
+				end_time = time_windows[-1] if end_time < time_windows[-1] else end_time
+
+			# if route_ids is not None:
+			# 	time_windows  =list(travel_times[route_id].keys())
+			# 	time_windows.sort()
+			# 	start_time = time_windows[0] if start_time > time_windows[0] else start_time
+			# 	end_time = time_windows[-1] if end_time < time_windows[-1] else end_time
+			# else:
+			# 	for r_id in travel_times.keys():
+			# 		time_windows  =list(travel_times[r_id].keys())
+			# 		time_windows.sort()
+			# 		start_time = time_windows[0] if start_time > time_windows[0] else start_time
+			# 		end_time = time_windows[-1] if end_time < time_windows[-1] else end_time
+		current_time = start_time
+
+
+		# 3 . get all routes link ids
+		link_tt_ids={}
+		for rd_ids in travel_times.keys():
+			first_time =  next(iter(travel_times[rd_ids]))
+			link_tt_ids[rd_ids]=list(travel_times[rd_ids][first_time].link_tt.keys())
+		added_time =timedelta(minutes=self.time_interval)
+		if fill_route_ids is None:
+			r_ids =list(travel_times.keys())
+		else:
+			r_ids=fill_route_ids
+			print (r_ids)
+
+		# Remove the time windows that are not in given range, so that all routes' time windows will be the same for
+		# next step of composting them together as different channel data. 
+		if phase =='train':
+			for r_id in fill_route_ids:
+				time_windows  =travel_times[r_id].keys()
+				for time_w in time_windows:
+					if time_w <start_time or time_w>= end_time:
+						del travel_times[r_id][time_w]
+
+
 		print('start to fill the missed time interval ... data')
 		while current_time < end_time:
 			# for r_id in travel_times.keys():
@@ -165,6 +239,11 @@ class kdd_data():
 					travel_times[r_id][current_time] =t_record
 					# print (current_time)
 			current_time+=added_time
+		for r_id in r_ids:
+			print( r_id + ' lentgh = {}'.format(len(list(travel_times[r_id].keys()))))
+		# import ipdb
+		# ipdb.set_trace()
+
 		return travel_times
 	def one_hot(self,num,length):
 		x = [0 for k in range(length)]
@@ -188,8 +267,9 @@ class kdd_data():
 			# print (year_m_d)
 			# print (hour)
 			time_key =datetime(int(year_m_d.year),int(year_m_d.month),int(year_m_d.day),int(hour),0,0)
-			data =[each_3h_weather[i] for i in range(2,len(each_3h_weather))]
+			data =[float(each_3h_weather[i]) for i in range(2,len(each_3h_weather))]
 			weather_dict[time_key]=data
+			# ipdb.set_trace()
 		return weather_dict
 	def get_weather_data(self,weather_data,current_time):
 		w_times=list(weather_data.keys())
@@ -238,7 +318,7 @@ class kdd_data():
 			vect=self.convert_windowInfo_to_vector(D[t_w],t_w,weather_data)
 			mat.append(vect)
 			# print vect
-		return mat
+		return mat,time_windows
 	def interpolate_zerolist(self, list_Y):
 		# all_Y  =list(list_Y)
 		all_Y=list_Y#[0 for i in range(len(list_Y))]
@@ -277,21 +357,44 @@ class kdd_data():
 	# 	X_test_n     =   int(math.floor(X_train_hourse*60/self.time_interval))
 	# 	test_x =np.zeros()
 
+	def delete_zero_y_data(self,X_list,Y_list,route_id_idx):
+		# for i,y_value in enumerate(y):
+		# 	zero_y_index=[i for i, y_v in enumerate(y) if np.prod(y_v)==0]
+		assert(len(Y_list)==len(X_list) or len(Y_list) ==1)
+		Y=Y_list[route_id_idx] if len(Y_list)==len(X_list) else Y_list[0]
+		zero_y_index=[i for i, y_v in enumerate(Y) if np.prod(y_v)==0]
+		len_d =len(X_list)
+		for i in range(len_d):
+			X_list[i] =np.delete(X_list[i],zero_y_index,axis=0)
+			if len(Y_list)==len(X_list) and len(Y_list)>1: 
+				Y_list[i] =np.delete(Y_list[i],zero_y_index,axis=0)
+		if len(Y_list) ==1:
+			Y_list[0] =np.delete(Y_list[0],zero_y_index,axis=0)
+		return X_list, Y_list,zero_y_index
 
-	def prepare_train_data(self,time_features):
-		X_train_hours				=	2
+	def prepare_train_data(self,time_features,time_stamp,p_hour = 2):
+		X_train_hours				=	p_hour
 		prediction_hours			=	2
 		prediction_interval_minutes =	self.time_interval
-		X_predict_n                 =   int(math.floor(X_train_hours*60/self.time_interval))
+		X_predict_n                 =   int(math.floor(X_train_hours*60 / self.time_interval))
 		Y_predict_n            		= 	int(math.floor(prediction_hours*60 /prediction_interval_minutes))
 		Y_hours_div_by_20min_n      = 	int(math.floor(prediction_hours*60 /20))
 		len_time_windows_hours 		= 	int(math.floor((X_train_hours+prediction_hours)*60/prediction_interval_minutes))
 		len_f =len(time_features)
 		sample_n =int(len_f-len_time_windows_hours+1)
 		lx =len(time_features[0])
+		# import ipdb
+		# ipdb.set_trace()
 		X_train =np.zeros((sample_n, int(lx*X_predict_n)))
 		# Y_train =np.zeros((sample_n, int(Y_predict_n)))
 		Y_train =np.zeros((sample_n, int(Y_hours_div_by_20min_n)))
+		sample_weights =[]
+		t_start_1=datetime(2000,1,1,8,0,0)
+		t_end_1=datetime(2000,1,1,10,0,0)
+		Time_span_1=(t_start_1,t_end_1)
+		t_start_2=datetime(2000,1,1,17,0,0)
+		t_end_2=datetime(2000,1,1,19,0,0)
+		Time_span_2=(t_start_2,t_end_2)
 
 
 		print(len_f)
@@ -301,7 +404,7 @@ class kdd_data():
 		for l in range(len_f):
 			all_Y.append(time_features[l][1])
 		print('start interpolate Y')
-		all_Y=self.interpolate_zerolist(all_Y)
+		# all_Y=self.interpolate_zerolist(all_Y)
 		t20_min_to_curmin_r =int(Y_predict_n/Y_hours_div_by_20min_n)
 		X=[]
 		Y_given_interval=[]
@@ -312,6 +415,7 @@ class kdd_data():
 					X.append(time_features[l+i])
 				for y in range(Y_predict_n):
 					Y_given_interval.append(all_Y[l+X_predict_n+y])
+					
 					# import ipdb
 					# ipdb.set_trace()
 			else:
@@ -328,11 +432,22 @@ class kdd_data():
 				if len(non_zero_y)==0:
 					non_zero_y.append(0)
 				Y_20min_interval.append(np.mean(non_zero_y))
+				# ipdb.set_trace()
 
 				# Y_20min_interval.append(np.mean(Y_given_interval[y*t20_min_to_curmin_r:(y+1)*t20_min_to_curmin_r]))
+			last=time_stamp[l+X_predict_n+Y_predict_n-1]
+			s_weight=5 if last.time()>=t_start_1.time() and last.time()<t_end_1.time() or \
+						last.time()>=t_start_2.time() and last.time()<t_end_2.time() \
+						else 1
+			sample_weights.append(s_weight)
+
 			X_train[l,:]=np.array(X).flatten()
 			Y_train[l,:]=np.array(Y_20min_interval)
-		return X_train, Y_train
+			# ipdb.set_trace()
+		
+		# ipdb.set_trace()
+		return X_train, Y_train, sample_weights
+		# return X_train, Y_train
 		# return np.array(X_train), np.array(Y_train)
 
 

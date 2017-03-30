@@ -12,9 +12,51 @@ from keras import regularizers
 from keras.layers.wrappers import Bidirectional, TimeDistributed
 from keras import backend as K
 from keras.models import Model
-from keras.layers.merge import add, multiply
+from keras.layers.merge import add, multiply, concatenate
 from keras.layers.normalization import BatchNormalization
-def kdd_model_new1(input_shape,output_shape):
+def kdd_LSTM_1(input_shape,output_shape,number_of_input=1):
+
+	time_step =input_shape[0]
+	data_dim  =input_shape[1]
+	ips=[]
+	
+	x_f_lstm_out_list =[]
+	for i in range(number_of_input):
+		ip=Input(shape=input_shape)
+		ips.append(ip)
+		x_f_lstm_out_list.append(LSTM(256,return_sequences=True)(ip))
+	if number_of_input>2:
+		concat=concatenate(x_f_lstm_out_list,axis=-1)
+		x2=LSTM(512,return_sequences=True)(concat)
+	else:
+		x2=LSTM(512,return_sequences=True)(x_f_lstm_out_list[0])
+	x3=LSTM(512,return_sequences=False)(x2)
+	n=output_shape[0]
+	d=Dense(n)(x3)
+	# d2=Dense(n)(Flatten()(d))
+	return ips ,d
+def kdd_LSTM_2(input_shape,output_shape,number_of_input=1):
+
+	time_step =input_shape[0]
+	data_dim  =input_shape[1]
+	ips=[]
+	
+	x_f_lstm_out_list =[]
+	for i in range(number_of_input):
+		ip=Input(shape=input_shape)
+		ips.append(ip)
+		x_f_lstm_out_list.append(LSTM(256,return_sequences=True)(ip))
+	if number_of_input>2:
+		concat=concatenate(x_f_lstm_out_list,axis=-1)
+		x2=LSTM(512,return_sequences=True)(concat)
+	else:
+		x2=LSTM(512,return_sequences=True)(x_f_lstm_out_list[0])
+	x3=LSTM(512,return_sequences=True)(x2)
+	n=output_shape[0]
+	d=Dense(1)(x3)
+	d2=Dense(n)(Flatten()(d))
+	return ips ,d2
+def kdd_model_new1(input_shape,output_shape,number_of_input=1):
 	ip = Input(shape=input_shape)
 	print (input_shape)
 	conv1=SeparableConv2D(48, (1, input_shape[1]), activation='relu', padding='valid')(ip)
@@ -50,10 +92,10 @@ def kdd_model_new1(input_shape,output_shape):
 	print(n)
 	out =Dense(n,activation='relu')(d)
 	return ip,out
-def kdd_model_new2(input_shape,output_shape):
+def kdd_model_inception(input_shape,output_shape,number_of_input=1):
 	ip = Input(shape=input_shape)
 	print (input_shape)
-	conv1=SeparableConv2D(48, (1, input_shape[1]), activation='relu', padding='valid',kernel_regularizer=regularizers.l2(0.01))(ip)
+	conv1=SeparableConv2D(48, (1, input_shape[1]), activation='relu', padding='valid',kernel_regularizer=regularizers.l1(0.01))(ip)
 	# conv1=Dropout(0.5)(conv1)
 	conv1_bn=BatchNormalization()(conv1)
 	conv2=Convolution2D(32, (3, 1), activation='relu', padding='same',kernel_regularizer=regularizers.l2(0.01))(conv1_bn)
@@ -73,7 +115,7 @@ def kdd_model_new2(input_shape,output_shape):
 	conv_last=BatchNormalization()(conv2_5)
 	# ft=Flatten()(conv7)
 	ft =Flatten()(conv_last)
-	d=Dense(256)(ft)
+	d=Dense(128)(ft)
 	d=BatchNormalization()(d)
 	d=Dropout(0.5)(d)
 	# print(d)
@@ -160,11 +202,12 @@ def kdd_gated_model_2(input_shape,output_shape):
 	print(n)
 	out =Dense(n)(d)
 	return ip,out
-def kdd_gated_model(input_shape,output_shape):
+def kdd_gated_model(input_shape,output_shape,number_of_input=1):
 	ip = Input(shape=input_shape)
 	print (input_shape)
 	#em=Embedding(100,100)(ip)
-	conv0=SeparableConv2D(128, (1, input_shape[1]), activation='relu', padding='valid',kernel_regularizer=regularizers.l2(0.01))(ip)
+	conv0=SeparableConv2D(128, (1, input_shape[1]), activation='relu', padding='valid',kernel_regularizer=regularizers.l1(0.01))(ip)
+	conv0=Dropout(0.5)(conv0)
 	conv0=BatchNormalization()(conv0)
 	embeded_tensor=Permute((1,3,2))(conv0)
 	conv1=Convolution2D(64, (1, 128), activation='relu', padding='valid',kernel_regularizer=regularizers.l2(0.01))(embeded_tensor)
@@ -196,7 +239,7 @@ def kdd_gated_model(input_shape,output_shape):
 
 	
 	ft=Flatten()(gate_conv4)
-	d=Dense(256,kernel_regularizer=regularizers.l2(0.01))(ft)
+	d=Dense(128,kernel_regularizer=regularizers.l2(0.01))(ft)
 	d=BatchNormalization()(d)
 	d=Dropout(0.5)(d)
 	# print(d)
