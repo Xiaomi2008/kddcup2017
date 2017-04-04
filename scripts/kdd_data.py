@@ -38,6 +38,10 @@ test_time_list =[time_range_day1_am,time_range_day1_pm,time_range_day2_am,time_r
 					time_range_day5_am,time_range_day5_pm,time_range_day6_am,time_range_day6_pm, \
 					time_range_day7_am,time_range_day7_pm]
 
+def one_hot(num,length):
+	x = [0 for k in range(length)]
+	x[num]=1
+	return x
 class time_recod_data():
 	def __init__(self):
 		self.link_tt={}
@@ -50,7 +54,54 @@ class time_recod_data():
 		for l_id in link_ids:
 			self.link_tt[l_id] =[]
 			self.link_st[l_id] =[]
-			# self.link_tt(link_ids)
+			# self.link_tt(link_ids)class single_vehicle_time_record():
+class blah():
+	def __init__(self,traj_info):
+		self.intersection_id 	= traj_info[0]
+		self.tollgate_id 		= traj_info[1]
+		self.route_id 			= intersection_id + '-' + tollgate_id
+		self.trace_start_time 	= datetime.strptime(traj_info[3], "%Y-%m-%d %H:%M:%S")
+		self.travel_time  		= float(each_traj[-1]) # travel time
+		self.link_travel_t={}
+		self.link_start_t={}
+		self.vector =None
+		for l_id in self.link_ids:
+			self.link_travel_t[l_id]=None
+			self.link_start_t[l_id]=None
+		link_seq= traj_info[4].split(';')
+		for link in link_seq:
+			info = link.split('#')
+			self.link_travel_travel_t[info[0]]=float(info[2])
+			self.link_start_t[info[0]]=datetime.strptime(info[1], "%Y-%m-%d %H:%M:%S")
+		self.to_vector()
+	def link_to_vector(self):
+		ids =self.link_travel_t.keys()
+		ids.sort()
+		link_tt_v=[]
+		link_st_v=[]
+		for l_id in ids:
+			link_tt_v.append(self.link_travel_t[l_id])
+			link_st_v+=[self.link_start_t[l_id].hour,self.link_start_t[l_id].minute,self.link_start_t[l_id].second]
+		vector=link_tt_v+link_st_v
+		return vector
+
+	def to_vector(self):
+		if self.vector is not None:
+			return self.vector
+		self.vector=[one_hot(self.intersecID_to_int(self.intersection_id+1,4)),one_hot(int(self.tollgate_id+1,4))
+					+one_hot(self.trace_start_time.weekday()+1,8)+one_hot(self.trace_start_time.hour()+1)
+					+one_hot(self.trace_start_time.minute()+1)+[self.travel_time]+self.ink_to_vector()]
+		return self.vector
+	def intersecID_to_int(self,intersec_id):
+		if intersec_id=='A':
+			return 0
+		elif intersec_id=='B':
+			return 1
+		elif intersec_id =='C':
+			return 2
+		else:
+			raise InputError()
+
 class kdd_data():
 	def __init__(self,interval =5):
 		self.time_interval = interval # 10 minutes interaval
@@ -245,10 +296,7 @@ class kdd_data():
 		# ipdb.set_trace()
 
 		return travel_times
-	def one_hot(self,num,length):
-		x = [0 for k in range(length)]
-		x[num]=1
-		return x
+
 	def parse_road_link_ids(self,link_ids_data):
 		link_ids =[]
 		for i in range(len(link_ids_data)):
@@ -436,9 +484,9 @@ class kdd_data():
 
 				# Y_20min_interval.append(np.mean(Y_given_interval[y*t20_min_to_curmin_r:(y+1)*t20_min_to_curmin_r]))
 			last=time_stamp[l+X_predict_n+Y_predict_n-1]
-			s_weight=5 if last.time()>=t_start_1.time() and last.time()<t_end_1.time() or \
+			s_weight=1 if last.time()>=t_start_1.time() and last.time()<t_end_1.time() or \
 						last.time()>=t_start_2.time() and last.time()<t_end_2.time() \
-						else 1
+						else 0.1
 			sample_weights.append(s_weight)
 
 			X_train[l,:]=np.array(X).flatten()
@@ -478,8 +526,8 @@ class kdd_data():
 			time_mean =0
 			time_std  =0
 			start_times =-1
-			start_day = -1
-			start_hour = -1
+			start_day = 0
+			start_hour = 0
 			start_minute =-1
 			mean_start_min_diff =-1
 			std_start_min_diff =-1
@@ -530,9 +578,13 @@ class kdd_data():
 				link_mean_st_seconds.append(np.mean(s))
 				link_std_st_seconds.append(np.std(s))
 		weather_feature=self.get_weather_data(weather_data,time_start)
-		# vector =[v_count,time_mean,time_std,start_day,start_hour,start_minute,mean_start_min_diff] + link_count+link_mean+link_std
-		vector =[v_count,time_mean,time_std]+self.one_hot(start_day+1,8) +self.one_hot(start_hour+1,25) \
-				+self.one_hot(start_minute+1,61)+[mean_start_min_diff] + link_mean_st_seconds+link_std_st_seconds \
+		# sec_diff=np.diff(seconds)
+		# vector =[v_csecondsount,time_mean,time_std,start_day,start_hour,start_minute,mean_start_min_diff] + link_count+link_mean+link_std
+		# vector =[v_count,time_mean,time_std]+self.one_hot(start_day+1,8) +self.one_hot(start_hour+1,25) \
+		# 		+self.one_hot(start_minute+1,61)+[mean_start_min_diff] + link_mean_st_seconds+link_std_st_seconds \
+		# 		+[std_start_min_diff]+link_count+link_mean+link_std+weather_feature
+		vector =[v_count,time_mean,time_std] +one_hot(start_day+1,8) +[start_hour] \
+				+[mean_start_min_diff] +link_std_st_seconds \
 				+[std_start_min_diff]+link_count+link_mean+link_std+weather_feature
 		# ipdb.set_trace()
 		# import ipdb
