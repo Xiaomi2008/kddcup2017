@@ -1,0 +1,12 @@
+*.k80
+LightGBM/
+h5_back/
+data/
+weights/
+*.dive1
+*.dive2
+*.pyc
+*.csv
+*.xlsx
+*.swp
+temp/
