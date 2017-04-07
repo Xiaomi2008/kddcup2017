@@ -3,7 +3,7 @@ import kdd_deep_models
 import numpy as np
 from numpy import random
 from keras.layers import Input
-from keras.callbacks  import CSVLogger, ModelCheckpoint, TensorBoard
+from keras.callbacks  import CSVLogger, ModelCheckpoint, TensorBoard, EarlyStopping
 from keras.models import Model
 from keras import backend as K
 from keras.optimizers import RMSprop, SGD,Adam
@@ -13,9 +13,10 @@ from keras import losses
 from datetime import datetime,timedelta
 import os
 import argparse
-import lightgbm as lgb
+# import lightgbm as lgb
 import h5py
 import ipdb
+
 
 time_range_day1_am =('2016-10-18 06:00:00','2016-10-18 08:00:00')
 time_range_day1_pm =('2016-10-18 15:00:00','2016-10-18 17:00:00')
@@ -45,6 +46,7 @@ test_time_list =[time_range_day1_am,time_range_day1_pm,time_range_day2_am,time_r
 
 deep_models={}
 deep_models['gated_cnn_1']=kdd_deep_models.kdd_gated_model
+deep_models['gated_conv_LSTM']=kdd_deep_models.kdd_gated_conv_LSTM
 deep_models['simple_inception']=kdd_deep_models.kdd_model_inception
 deep_models['simple_gate']=kdd_deep_models.kdd_model_simple_gated
 deep_models['simple_gate_condition']=kdd_deep_models.kdd_model_simple_gated_condition_prob
@@ -53,6 +55,7 @@ deep_models['LSTM_1']=kdd_deep_models.kdd_LSTM_1
 deep_models['LSTM_2']=kdd_deep_models.kdd_LSTM_2
 deep_models['LSTM_2_bidirection']=kdd_deep_models.kdd_LSTM_bidirection
 deep_models['default_model']=deep_models['gated_cnn_1']
+deep_models['simple_gate_conv_LSTM']=kdd_deep_models.kdd_model_simple_gated_conv_LSMT
 deep_models['GBM']='GBM'
 # deep_models['gated_cnn']=kdd_deep_models.kdd_gated_model
 def get_model_and_weightFile(args):
@@ -112,6 +115,40 @@ def save_X_Y(args,X,Y,sample_weights):
 	f.create_dataset("./SW",data=sample_weights)
 	f.close()
 		# return X,Y
+def save_X_Y_record_based_data(args,X,Y,sample_weights):
+	data_file ='X_Y_record_based_'+args.route_id +'_' +'_T'+str(args.given_time)
+	data_file ='./data/'+data_file +'.h5'
+	# if os.path.exists(data_file):
+	f=h5py.File(data_file,'w')
+	f.create_dataset("./X", data=X)
+	f.create_dataset("./Y",data=Y)
+	f.create_dataset("./SW",data=sample_weights)
+	f.close()
+
+def load_X_Y_record_based_data(args):
+	data_file ='X_Y_record_based_'+args.route_id +'_' +'_T'+str(args.given_time)
+	data_file ='./data/'+data_file +'.h5'
+	print('load training data from : {} '.format(data_file))
+	if os.path.exists(data_file):
+		f=h5py.File(data_file,'r')
+		X_f=f['X']
+		Y_f=f['Y']
+		SW_f=f['SW']
+		X=X_f[:]
+		Y=Y_f[:]
+		SW=SW_f[:]
+		f.close()
+		return X,Y,SW
+	else:
+		print('Can not find the data file')
+		return None,None,None
+
+def generate_record_based_data(args):
+	X,Y,sample_weights=load_X_Y_record_based_data(args)
+	if X is None:
+		X,Y,sample_weights=kdd_DATA.get_traj_record_based_train_data(args.route_id)
+		save_X_Y_record_based_data(args,X,Y,sample_weights)
+	return X,Y,sample_weights
 def generate_train_data(args):
 	X,Y,sample_weights=load_X_Y(args)
 	if X is None:
@@ -123,6 +160,7 @@ def generate_train_data(args):
 		cf_list =combined_feature_list[:]
 		if route_id not in cf_list:
 			cf_list.append(route_id)
+		#Fill missing time bin wit zero vector
 		kdd_DATA.travel_times=kdd_DATA.zerofill_missed_time_info(travel_times=kdd_DATA.travel_times,
 																		input_route_ids=[route_id],
 																		fill_route_ids=cf_list,
@@ -155,15 +193,24 @@ def generate_train_data(args):
 def generate_test_data(args):
 	pass
 
-def mape_and_kl_loss(y_true,y_pred):
-	return losses.mape(y_true,y_pred)
+def mape_exclude_zero_loss(y_true,y_pred):
+	diff = K.abs((y_true - y_pred) / K.clip(K.abs(y_true),
+									 K.epsilon(), 
+									 None))
+	y_zeros=K.zeros_like(y_true)
+	non_zeros_idx=K.greater(y_true,y_zeros)
+	diff=diff*K.cast(non_zeros_idx,dtype='float32')
+	return 100. *K.sum(diff)/K.sum(K.cast(non_zeros_idx,dtype='float32'))
+	# return 100. * K.mean(diff, axis=-1) 
+
+	# return losses.mape(y_true,y_pred)
 
 def train_ensemble_deep_model_on_diff_sample(X,Y,model_save_file=None,model_create_Func=None,sample_weights=None,num_models=10):
 	for i in range(num_models):
-		X_tr,Y_tr,X_val,Y_val,s_weights=partition_train_val(X,Y,sample_weights,valid_on_high_weight=True)
+		X_tr,Y_tr,X_val,Y_val,s_weights=partition_train_val(X,Y,sample_weights,valid_on_high_weight=True,seed=i)
 		weight_file=model_save_file[:-3]+'_s'+str(i)+'.h5'
 		print('ensemble train {} model {}'.format(i,weight_file))
-		if 'LSTM'in model_save_file:
+		if 'LSTM'in model_save_file and 'conv' not in model_save_file:
 			X_train_channel_list=[]
 			X_val_channel_list=[]
 			for i in range(X_tr.shape[-1]):
@@ -233,14 +280,15 @@ def train_deep_model(X_train,Y_train,X_val,Y_val,model_save_file=None,model_crea
 			pass
 	# from sklearn.model_selection import KFold
 	# f = KFold(n_splits=2)
-	# optimizer =RMSprop(lr = 1e-3)
+	# optimizer =RMSprop(lr = 0.0001)
 	optimizer =Adam(lr=0.0002, beta_1=0.9, beta_2=0.999, epsilon=1e-08, decay=0.00001)
-	model.compile(optimizer=optimizer, loss=mape_and_kl_loss, metrics=['MAPE'])#[metrics.mape])
+	model.compile(optimizer=optimizer, loss=mape_exclude_zero_loss, metrics=[mape_exclude_zero_loss])#[metrics.mape])
 	model.summary()
 	best_model = ModelCheckpoint(weight_h5_file, verbose = 1, save_best_only = True)
+	early_stop =EarlyStopping(monitor='val_loss', min_delta=0, patience=20, verbose=0, mode='auto')
 	tensorboard= TensorBoard(log_dir='./logs',histogram_freq=0,write_graph=True,write_images=False)
-	history=model.fit(x=X_train,y=Y_train, batch_size=96,epochs = 300, validation_data=(X_val,Y_val), \
-					callbacks = [tensorboard,best_model],sample_weight=sample_weights,
+	history=model.fit(x=X_train,y=Y_train, batch_size=64,epochs = 150, validation_data=(X_val,Y_val), \
+					callbacks = [tensorboard,best_model,early_stop],sample_weight=sample_weights,
 					 shuffle=True)
 	# history=model.fit(x=X_train,y=Y_train, epochs = 600, validation_split=0.05, \
 	# 				callbacks = [tensorboard,best_model],sample_weight=np.array(sample_weights))
@@ -328,10 +376,11 @@ def write_submit_traj_file(predict_result):
 				if i<5:
 					p_ave_time = p_tts[0,i+1]
 	fw.close()
-def partition_train_val(X,Y,weights=None,valid_on_high_weight=False):
-	ratio =0.2
+def partition_train_val(X,Y,weights=None,valid_on_high_weight=False,seed=0):
+	ratio =0.1
 	n=X.shape[0]
-	crossValid =True
+	crossValid =False
+	random.seed(seed)
 	if crossValid:
 		parts_num =int(1/ratio)
 		part_idx =random.randint(0,parts_num)
@@ -349,8 +398,8 @@ def partition_train_val(X,Y,weights=None,valid_on_high_weight=False):
 		# part_idx =random.randint(0,n-parts_num)
 		part_length =n/parts_num
 		part_idx =n-part_length-1
-		te_start_idx= part_idx
-		te_end_idx  = part_idx+part_length
+		te_start_idx= random.randint(0,part_idx)
+		te_end_idx  = te_start_idx+part_length
 		# ipdb.set_trace()
 		part_idxs=range(te_start_idx,te_end_idx)
 		X_te=X[part_idxs]
@@ -369,7 +418,7 @@ def partition_train_val(X,Y,weights=None,valid_on_high_weight=False):
 		W_tr=np.delete(weights,part_idxs)
 		return X_tr,Y_tr,X_te,Y_te,W_tr
 	else:
-		return X_tr,Y_tr,X_te,Y_te
+		return X_tr,Y_tr,X_te,Y_te,None
 
 if __name__ == "__main__":
 	parser =argparse.ArgumentParser()
@@ -388,6 +437,11 @@ if __name__ == "__main__":
 		combined_feature_list=args.clist
 	# os._exit(0)
 	kdd_DATA =kdd_data.kdd_data(args.interval)
+	# X,Y=kdd_DATA.get_traj_record_based_train_data()
+	# ipdb.set_trace()
+	
+
+
 	# route_time_windows = list(kdd_DATA.travel_times['C-3'].keys())
 	# route_time_windows.sort()
 	# print route_time_windows[0:60]
@@ -492,13 +546,16 @@ if __name__ == "__main__":
 	# ipdb.set_trace()
 	if phase =='train':
 		# route_id='A-2'
+
 		model_create_Func,weight_file=get_model_and_weightFile(args)
-		X_train_2D,Y_train,sample_weights=generate_train_data(args)
-		# ipdb.set_trace()
-		sample_weights=change_sample_weight(sample_weights,1,0.35)
-		n,outp=Y_train.shape
-		outshape =(outp,)
-		X_tr,Y_tr,X_val,Y_val,W_tr=partition_train_val(X_train_2D,Y_train,weights=sample_weights,valid_on_high_weight=True)
+		# X_train_2D,Y_train,sample_weights=generate_train_data(args)
+		# sample_weights=change_sample_weight(sample_weights,1,0.15)
+		# n,outp=Y_train.shape
+		# outshape =(outp,)
+		# X_tr,Y_tr,X_val,Y_val,W_tr=partition_train_val(X_train_2D,Y_train,weights=sample_weights,valid_on_high_weight=True)
+
+
+
 		# X_train_2D,Y_train=shuffle(X_train_2D,Y_train,random_state=0)
 		# sample_weights =W_tr
 		from sklearn.utils import shuffle
@@ -524,9 +581,22 @@ if __name__ == "__main__":
 			Y_p=np.array(Y_p)
 			Y_p=np.transpose(Y_p,(1,0))
 		else: 
+			 # X,Y=kdd_DATA.get_traj_record_based_train_data(traj_records)
+			# X,Y=kdd_DATA.get_traj_record_based_train_data()
+			# ipdb.set_trace()
+			X,Y,sample_weights=generate_record_based_data(args)
+			sample_weights=change_sample_weight(sample_weights,1,0.15)
+			# Y=np.array(Y)
+			# ipdb.set_trace()
+			X=np.expand_dims(X,axis=3)
+			X_train_2D =X
+			Y_train =Y
 			train_ensemble_deep_model_on_diff_sample(X=X_train_2D,Y=Y_train,model_save_file=weight_file, \
 													model_create_Func=model_create_Func,\
 													sample_weights=sample_weights)
+			# train_ensemble_deep_model_on_diff_sample(X=X_train_2D,Y=Y_train,model_save_file=weight_file, \
+			# 										model_create_Func=model_create_Func,\
+			# 										sample_weights=None)
 			Y_p=predict_ensemble_deep_model_on_diff_sample([X_val],outshape,weight_file,model_create_Func)
 		# Y_p=model_predict([X_val],[6],weight_file,model_create_Func)
 		print ('my mape = {}'.format(np.mean(np.abs((Y_val - Y_p) / Y_val)) * 100))
