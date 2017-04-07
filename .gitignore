@@ -1,4 +1,5 @@
 *.k80
+logs/
 LightGBM/
 h5_back/
 data/
