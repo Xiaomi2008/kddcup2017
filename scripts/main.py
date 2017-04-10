@@ -44,6 +44,7 @@ test_time_list =[time_range_day1_am,time_range_day1_pm,time_range_day2_am,time_r
 					time_range_day5_am,time_range_day5_pm,time_range_day6_am,time_range_day6_pm, \
 					time_range_day7_am,time_range_day7_pm]
 
+
 deep_models={}
 deep_models['gated_cnn_1']=kdd_deep_models.kdd_gated_model
 deep_models['gated_conv_LSTM']=kdd_deep_models.kdd_gated_conv_LSTM
@@ -62,13 +63,18 @@ def get_model_and_weightFile(args):
 	model = deep_models[args.model]
 	# print (args)
 	phase =args.phase
-	model_save_file ='time_'+args.model +'_'+args.route_id +'_' +'I'+str(args.interval) +'_T'+str(args.given_time)
+	model_save_file ='time_record_based_'+args.model +'_'+args.route_id +'_' +'I'+str(args.interval) +'_T'+str(args.given_time)
 	combined_routeID_features =''
 	if hasattr(args,'clist'):
 		for r_id in args.clist:
 			combined_routeID_features='-'+combined_routeID_features +r_id
 		combined_routeID_features='_CombineF'+'__'+combined_routeID_features +'__'
-	model_save_file =model_save_file +combined_routeID_features+'.h5'
+	if args.remove_holiday:
+		model_save_file+='_No_holiday_data_'
+		# ipdb.set_trace()
+	if args.sample_weight:
+		model_save_file +=model_save_file +'_sample_weight_'
+	model_save_file+=combined_routeID_features+'.h5'
 	return model, model_save_file
 def change_sample_weight(sample_weights,d1,d2):
 	max_r=np.max(sample_weights)
@@ -117,6 +123,8 @@ def save_X_Y(args,X,Y,sample_weights):
 		# return X,Y
 def save_X_Y_record_based_data(args,X,Y,sample_weights):
 	data_file ='X_Y_record_based_'+args.route_id +'_' +'_T'+str(args.given_time)
+	if args.remove_holiday:
+		data_file+='_No_holiday_data'
 	data_file ='./data/'+data_file +'.h5'
 	# if os.path.exists(data_file):
 	f=h5py.File(data_file,'w')
@@ -127,6 +135,8 @@ def save_X_Y_record_based_data(args,X,Y,sample_weights):
 
 def load_X_Y_record_based_data(args):
 	data_file ='X_Y_record_based_'+args.route_id +'_' +'_T'+str(args.given_time)
+	if args.remove_holiday:
+		data_file+='_No_holiday_data'
 	data_file ='./data/'+data_file +'.h5'
 	print('load training data from : {} '.format(data_file))
 	if os.path.exists(data_file):
@@ -146,9 +156,11 @@ def load_X_Y_record_based_data(args):
 def generate_record_based_data(args):
 	X,Y,sample_weights=load_X_Y_record_based_data(args)
 	if X is None:
-		X,Y,sample_weights=kdd_DATA.get_traj_record_based_train_data(args.route_id)
+		X,Y,sample_weights=kdd_DATA.get_traj_record_based_train_data(args.route_id,args.remove_holiday)
 		save_X_Y_record_based_data(args,X,Y,sample_weights)
 	return X,Y,sample_weights
+# def generate_cord_based_test_data(args):
+
 def generate_train_data(args):
 	X,Y,sample_weights=load_X_Y(args)
 	if X is None:
@@ -205,8 +217,8 @@ def mape_exclude_zero_loss(y_true,y_pred):
 
 	# return losses.mape(y_true,y_pred)
 
-def train_ensemble_deep_model_on_diff_sample(X,Y,model_save_file=None,model_create_Func=None,sample_weights=None,num_models=10):
-	for i in range(num_models):
+def train_ensemble_deep_model_on_diff_sample(X,Y,model_save_file=None,model_create_Func=None,sample_weights=None,num_models=10, start_model =0):
+	for i in range(start_model,num_models):
 		X_tr,Y_tr,X_val,Y_val,s_weights=partition_train_val(X,Y,sample_weights,valid_on_high_weight=True,seed=i)
 		weight_file=model_save_file[:-3]+'_s'+str(i)+'.h5'
 		print('ensemble train {} model {}'.format(i,weight_file))
@@ -225,7 +237,6 @@ def predict_ensemble_deep_model_on_diff_sample(X,output_shape,model_save_file=No
 	assert (type(X) is list)
 	Y_p={}
 	for i in range(num_models):
-		# X_tr,Y_tr,X_val,Y_val,s_weights=partition_train_val(X,Y,sample_weights,valid_on_high_weight=True)
 		weight_file=model_save_file[:-3]+'_s'+str(i)+'.h5'
 		print('ensemble predict {} model {}'.format(i,weight_file))
 		Y_p[i]=[]
@@ -235,9 +246,8 @@ def predict_ensemble_deep_model_on_diff_sample(X,output_shape,model_save_file=No
 	Y_k.sort()
 	All=[Y_p[i] for i in Y_k]
 	Y_arry=np.array(All)
-	# ipdb.set_trace()
-
 	Y=np.mean(Y_arry,axis=0)
+	# ipdb.set_trace()
 	return Y
 
 # def mape_and_variance_loss(Y_Pred,Y_True):
@@ -423,11 +433,13 @@ def partition_train_val(X,Y,weights=None,valid_on_high_weight=False,seed=0):
 if __name__ == "__main__":
 	parser =argparse.ArgumentParser()
 	parser.add_argument("-p","--phase", help="train or test",default='train')
-	parser.add_argument("-r","--route_id", help="given a route_id for model to train",default='B-3')
+	parser.add_argument("-r","--route_id", help="given a route_id for model to train")
 	parser.add_argument("-i","--interval", help="feature inverval minutes",type=int,default=5)
 	parser.add_argument("-c","--combine_features", nargs='*',dest='clist', help="list of combine features",default=argparse.SUPPRESS)
 	parser.add_argument("-m","--model", help="select a deep model",default='default_model')
 	parser.add_argument("-t","--given_time",help="preceeding data time length (in hour)",type=float,default =2)
+	parser.add_argument("-d","--remove_holiday",help="wheather to remove holiday data",type=bool,default=True)
+	parser.add_argument("-w","--sample_weight",help="apply sample weight on test time",type=bool,default=True)
 	args=parser.parse_args()
 	combined_feature_list =[]
 	print (args)
@@ -479,68 +491,91 @@ if __name__ == "__main__":
 	
 	route_ids=['A-2','A-3','C-1','C-3','B-1','B-3']
 	# route_ids=['C-1','C-3','B-1','B-3','A-3']
-
-
+	if args.route_id is not None:
+		route_ids=[args.route_id]
 	# route_ids=['A-2']
+	print(route_ids)
 	if phase =='test':
-		# route_id='A-3'
-		test_combine_features={}
-		test_combine_features['A-2']=[]
-		test_combine_features['A-3']=[]
-		test_combine_features['C-1']=[]
-		test_combine_features['C-3']=[]
-		test_combine_features['B-1']=[]
-		test_combine_features['B-3']=[]
-		model_create_Func,weight_file=get_model_and_weightFile(args)
-		# route_id =args.route_id
-		travel_time_test_info=kdd_DATA.read_test_data()
 		predict_result ={}
 		num_out_put =[6]
+		# model_create_Func,weight_file=get_model_and_weightFile(args)
 		for route_id in route_ids:
-			test_combine_features[route_id].append(route_id)
-			predict_result[route_id]={}
-			for tt in test_time_list:
-				start_time=datetime.strptime(tt[0],"%Y-%m-%d %H:%M:%S")
-				end_time=datetime.strptime(tt[1],"%Y-%m-%d %H:%M:%S")
-				travel_time_test_info=kdd_DATA.zerofill_missed_time_info(travel_times=travel_time_test_info,
-																		 input_route_ids=[route_id],
-																		 fill_route_ids=test_combine_features[route_id],
-																		 start_time=start_time,end_time=end_time,
-																		 phase='test')
-				# ipdb.set_trace()
+			print ('current_r_id ={}'.format(route_id))
 			args.route_id =route_id
 			model_create_Func,weight_file=get_model_and_weightFile(args)
-			# if not test_combine_features[route_id]:
-			X_list ={}
-			for i,r_id in enumerate(test_combine_features[route_id]):
-				mat_test=kdd_DATA.get_test_feature_mat(travel_time_test_info,r_id,kdd_DATA.weather_test)
-				time_list =list(mat_test.keys())
-				time_list.sort()
-				for i in range(len(time_list)):
-					test_X = np.array(mat_test[time_list[i]])
-					test_X=np.expand_dims(test_X,axis=2)
-					test_X=np.expand_dims(test_X,axis=0)
-					if time_list[i] not in X_list.keys():
-						X_list[time_list[i]]=[]
-					X_list[time_list[i]].append(test_X)
-			# ipdb.set_trace()
+			predict_result[route_id]={}
+			X_time_dict=kdd_DATA.get_traj_record_based_test_data(route_id)
+			time_slots=list(X_time_dict.keys())
+			time_slots.sort()
 			T_X=[]
-			for i,time_i in enumerate(X_list.keys()):
-				# test_X=np.concatenate(X_list[time_i],axis=2)
-				T_X.append(np.concatenate(X_list[time_i],axis=2))
-				# predict_result[route_id][time_i]=model_predict([test_X],num_out_put,weight_file,model_create_Func)
+			for time_slot in time_slots:
+				h,w=X_time_dict[time_slot].shape
+				# ipdb.set_trace()
+				T_X.append(np.reshape(X_time_dict[time_slot],(1,h,w,1)))
+				# ipdb.set_trace()
 			A=predict_ensemble_deep_model_on_diff_sample(T_X,num_out_put,
 														model_save_file=weight_file,
-														model_create_Func=model_create_Func)
-			# print(A.shape)
-			# print(X_list.keys())
-			# ipdb.set_trace()
-			for i,time_i in enumerate(X_list.keys()):
-				predict_result[route_id][time_i]=A[i]
-			# predict_result[route_id][time_i]=predict_ensemble_deep_model_on_diff_sample(test_X,num_out_put,
-			# 																		model_save_file=weight_file,
-			# 																		model_create_Func=model_create_Func)
+														model_create_Func=model_create_Func,
+														num_models=6)
+			for i, time_slot in enumerate(time_slots):
+				predict_result[route_id][time_slot]=A[i]
 		write_submit_traj_file(predict_result)
+
+		# # route_id='A-3'
+		# test_combine_features={}
+		# test_combine_features['A-2']=[]
+		# test_combine_features['A-3']=[]
+		# test_combine_features['C-1']=[]
+		# test_combine_features['C-3']=[]
+		# test_combine_features['B-1']=[]
+		# test_combine_features['B-3']=[]
+		# model_create_Func,weight_file=get_model_and_weightFile(args)
+		# # route_id =args.route_id
+		# travel_time_test_info=kdd_DATA.read_test_data()
+		
+		# for route_id in route_ids:
+		# 	test_combine_features[route_id].append(route_id)
+		# 	predict_result[route_id]={}
+		# 	for tt in test_time_list:
+		# 		start_time=datetime.strptime(tt[0],"%Y-%m-%d %H:%M:%S")
+		# 		end_time=datetime.strptime(tt[1],"%Y-%m-%d %H:%M:%S")
+		# 		travel_time_test_info=kdd_DATA.zerofill_missed_time_info(travel_times=travel_time_test_info,
+		# 																 input_route_ids=[route_id],
+		# 																 fill_route_ids=test_combine_features[route_id],
+		# 																 start_time=start_time,end_time=end_time,
+		# 																 phase='test')
+		# 		# ipdb.set_trace()
+		# 	args.route_id =route_id
+		# 	model_create_Func,weight_file=get_model_and_weightFile(args)
+		# 	# if not test_combine_features[route_id]:
+		# 	X_list ={}
+		# 	for i,r_id in enumerate(test_combine_features[route_id]):
+		# 		mat_test=kdd_DATA.get_test_feature_mat(travel_time_test_info,r_id,kdd_DATA.weather_test)
+		# 		time_list =list(mat_test.keys())
+		# 		time_list.sort()
+		# 		for i in range(len(time_list)):
+		# 			test_X = np.array(mat_test[time_list[i]])
+		# 			test_X=np.expand_dims(test_X,axis=2)
+		# 			test_X=np.expand_dims(test_X,axis=0)
+		# 			if time_list[i] not in X_list.keys():
+		# 				X_list[time_list[i]]=[]
+		# 			X_list[time_list[i]].append(test_X)
+		# 	# ipdb.set_trace()
+		# 	T_X=[]
+		# 	for i,time_i in enumerate(X_list.keys()):
+		# 		# test_X=np.concatenate(X_list[time_i],axis=2)
+		# 		T_X.append(np.concatenate(X_list[time_i],axis=2))
+		# 		# predict_result[route_id][time_i]=model_predict([test_X],num_out_put,weight_file,model_create_Func)
+		# 	A=predict_ensemble_deep_model_on_diff_sample(T_X,num_out_put,
+		# 												model_save_file=weight_file,
+		# 												model_create_Func=model_create_Func)
+	
+		# 	for i,time_i in enumerate(X_list.keys()):
+		# 		predict_result[route_id][time_i]=A[i]
+		# 	# predict_result[route_id][time_i]=predict_ensemble_deep_model_on_diff_sample(test_X,num_out_put,
+		# 	# 																		model_save_file=weight_file,
+		# 	# 																		model_create_Func=model_create_Func)
+		# write_submit_traj_file(predict_result)
 
 	# import ipdb
 	# ipdb.set_trace()
@@ -586,6 +621,7 @@ if __name__ == "__main__":
 			# ipdb.set_trace()
 			X,Y,sample_weights=generate_record_based_data(args)
 			sample_weights=change_sample_weight(sample_weights,1,0.15)
+			# sample_weights =None
 			# Y=np.array(Y)
 			# ipdb.set_trace()
 			X=np.expand_dims(X,axis=3)
@@ -593,7 +629,7 @@ if __name__ == "__main__":
 			Y_train =Y
 			train_ensemble_deep_model_on_diff_sample(X=X_train_2D,Y=Y_train,model_save_file=weight_file, \
 													model_create_Func=model_create_Func,\
-													sample_weights=sample_weights)
+													sample_weights=sample_weights,start_model=0)
 			# train_ensemble_deep_model_on_diff_sample(X=X_train_2D,Y=Y_train,model_save_file=weight_file, \
 			# 										model_create_Func=model_create_Func,\
 			# 										sample_weights=None)

@@ -355,7 +355,7 @@ def kdd_model_simple_gated_conv_LSMT(input_shape,output_shape,number_of_input=1)
 def kdd_model_simple_gated(input_shape,output_shape,number_of_input=1):
 	ip = Input(shape=input_shape)
 	print (input_shape)
-	conv1=SeparableConv2D(48, (1, input_shape[1]), activation='relu', padding='valid',kernel_regularizer=regularizers.l1(0.01))(ip)
+	conv1=SeparableConv2D(48, (1, input_shape[1]), activation='relu', padding='valid')(ip)
 	conv1=Dropout(0.25)(conv1)
 	conv1_bn=BatchNormalization()(conv1)
 	conv1_gt1=Convolution2D(48, (2, 1), activation='sigmoid', padding='same',kernel_regularizer=regularizers.l2(0.01))(conv1_bn)
@@ -563,7 +563,7 @@ def kdd_gated_model(input_shape,output_shape,number_of_input=1):
 	ip = Input(shape=input_shape)
 	print (input_shape)
 	#em=Embedding(100,100)(ip)
-	conv0=SeparableConv2D(128, (1, input_shape[1]), activation='relu', padding='valid',kernel_regularizer=regularizers.l1(0.01))(ip)
+	conv0=SeparableConv2D(128, (1, input_shape[1]), activation='relu', padding='valid')(ip) #kernel_regularizer=regularizers.l1(0.01))(ip
 	conv0=Dropout(0.5)(conv0)
 	conv0=BatchNormalization()(conv0)
 	embeded_tensor=Permute((1,3,2))(conv0)
