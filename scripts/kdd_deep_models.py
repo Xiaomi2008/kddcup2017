@@ -15,6 +15,7 @@ from keras.models import Model
 from keras.layers.merge import add, multiply, concatenate
 from keras.layers.normalization import BatchNormalization
 from keras.models import Sequential
+# from keras import activation
 # def make_model(dense_layer_sizes, filters, kernel_size, pool_size):
 #     '''Creates model comprised of 2 convolutional layers followed by dense layers
 #     dense_layer_sizes: List of layer sizes.
@@ -80,6 +81,51 @@ from keras.models import Sequential
 #                   metrics=['accuracy'])
 
 #     return model
+def inception_residual(x,kernels=(1,3,5,7),feature_maps=[32,24,12,8]):
+	branch_n=len(feature_maps)
+	assert len(kernels)==len(feature_maps)
+	conv=BatchNormalization()(x)
+	x=Activation('relu')(x)
+	conv_list=[]
+	for i in range(branch_n):
+		conv_list.append(Activation('relu')(BatchNormalization()(Convolution2D(feature_maps[i], (kernels[i], 1), activation='relu', padding='same',kernel_regularizer=regularizers.l2(0.01))(x))))
+	concat=concatenate(conv_list,axis=-1)
+	return concat
+
+
+def kdd_incep_res_model(input_shape,output_shape,number_of_input=1):
+	ip = Input(shape=input_shape)
+	print (input_shape)
+	conv1=SeparableConv2D(64, (1, input_shape[1]), activation='relu', padding='valid',kernel_regularizer=regularizers.l1(0.01))(ip)
+	conv1=Dropout(0.25)(conv1)
+	conv1_bn=BatchNormalization()(conv1)
+	conv1_gt1=Convolution2D(64, (2, 1), activation='sigmoid', padding='same',kernel_regularizer=regularizers.l2(0.01))(conv1_bn)
+	ir1=inception_residual(conv1_bn,kernels=(1,3,5,7),feature_maps=[24,18,14,8])
+	# ir2=inception_residual(ir1,kernels=(1,3,5,7),feature_maps=[22,14,8,4])
+	conv1_2=multiply([ir1,conv1_gt1])
+	
+	pool1=AveragePooling2D(pool_size=(2,1),strides=(2,1))(conv1_2)
+	pool1=Dropout(0.25)(pool1)
+	conv2=Convolution2D(96, (1, 1), activation='relu', padding='same',kernel_regularizer=regularizers.l2(0.01))(pool1)
+	conv2_bn=BatchNormalization()(conv2)
+	conv2_gt1=Convolution2D(96, (2, 1), activation='sigmoid', padding='same',kernel_regularizer=regularizers.l2(0.01))(conv2_bn)
+	ir2_1=inception_residual(conv2_bn,kernels=(1,3,5,7),feature_maps=[44,28,16,8])
+	# ir2_2=inception_residual(ir2_1,kernels=(1,3,5,7),feature_maps=[44,28,16,8])
+	conv2_2=multiply([ir2_1,conv2_gt1])
+	# pool2=AveragePooling2D(pool_size=(2,1),strides=(2,1))(conv2_2)
+	conv2_2=Dropout(0.25)(conv2_2)
+	# time_data=Reshape((-1,60))(conv2_2)
+	# x1=LSTM(64,return_sequences=False)(time_data)
+	ft =Flatten()(conv2_2)
+	n=output_shape[0]
+	d=Dense(n)(ft)
+	# d=Dense(n)(ft)
+	# d2=Dense(n)(Flatten()(d))
+	return ip ,d
+
+
+
+
 def create_model(optimizer='rmsprop', init='glorot_uniform',branch='gate',
 				kernel_size=3,number_ch_in_first_block=16,num_blocks=2, 
 				layer_in_blocks =3,
@@ -104,13 +150,13 @@ def kdd_LSTM_1(input_shape,output_shape,number_of_input=1):
 	for i in range(number_of_input):
 		ip=Input(shape=input_shape)
 		ips.append(ip)
-		x_f_lstm_out_list.append(LSTM(256,return_sequences=True)(ip))
+		x_f_lstm_out_list.append(LSTM(256,return_sequences=True,unroll=True)(ip))
 	if number_of_input>2:
 		concat=concatenate(x_f_lstm_out_list,axis=-1)
-		x2=LSTM(512,return_sequences=True)(concat)
+		x2=LSTM(512,return_sequences=True,unroll=True)(concat)
 	else:
-		x2=LSTM(512,return_sequences=True)(x_f_lstm_out_list[0])
-	x3=LSTM(512,return_sequences=False)(x2)
+		x2=LSTM(512,return_sequences=True,unroll=True)(x_f_lstm_out_list[0])
+	x3=LSTM(512,return_sequences=False,unroll=True)(x2)
 	n=output_shape[0]
 	d=Dense(n)(x3)
 	# d2=Dense(n)(Flatten()(d))
@@ -129,7 +175,7 @@ def kdd_LSTM_2(input_shape,output_shape,number_of_input=1):
 		x_f_lstm_out_list.append(LSTM(64,return_sequences=True,stateful=True)(ip))
 	if number_of_input>2:
 		concat=concatenate(x_f_lstm_out_list,axis=-1)
-		x2=LSTM(64,return_sequences=True,stateful=True)(concat)
+		x2=LSTM(64,return_sequences=True,stateful=True,unroll=True)(concat)
 	else:
 		x2=LSTM(64,return_sequences=True,stateful=True)(x_f_lstm_out_list[0])
 	x3=LSTM(64,return_sequences=True,stateful=True)(x2)
@@ -317,29 +363,30 @@ def kdd_model_simple_gated_conv_LSMT(input_shape,output_shape,number_of_input=1)
 	print (input_shape)
 	conv1=SeparableConv2D(48, (1, input_shape[1]), activation='relu', padding='valid',kernel_regularizer=regularizers.l1(0.01))(ip)
 	# conv1=Dropout(0.5)(conv1)
-	conv1_bn=BatchNormalization()(conv1)
-	conv1_gt1=Convolution2D(48, (2, 1), activation='sigmoid', padding='same',kernel_regularizer=regularizers.l2(0.01))(conv1_bn)
-	conv2=Convolution2D(32, (5, 1), activation='relu', padding='same',kernel_regularizer=regularizers.l2(0.01))(conv1_bn)
-	conv2=BatchNormalization()(conv2)
-	conv3=Convolution2D(32, (5, 1), activation='relu', padding='same',kernel_regularizer=regularizers.l2(0.01))(conv2)
-	conv3=BatchNormalization()(conv3)
-	conv4=Convolution2D(48, (3, 1), activation='relu', padding='same',kernel_regularizer=regularizers.l2(0.01))(conv3)
-	# conv1_4=multiply([conv1_bn,conv1_gt1])
-	conv1_4=multiply([conv4,conv1_gt1])
-	conv5=BatchNormalization()(conv1_4)
+	# conv1_bn=BatchNormalization()(conv1)
+	# conv1_gt1=Convolution2D(48, (2, 1), activation='sigmoid', padding='same',kernel_regularizer=regularizers.l2(0.01))(conv1_bn)
+	# conv2=Convolution2D(32, (5, 1), activation='relu', padding='same',kernel_regularizer=regularizers.l2(0.01))(conv1_bn)
+	# conv2=BatchNormalization()(conv2)
+	# conv3=Convolution2D(32, (5, 1), activation='relu', padding='same',kernel_regularizer=regularizers.l2(0.01))(conv2)
+	# conv3=BatchNormalization()(conv3)
+	# conv4=Convolution2D(48, (3, 1), activation='relu', padding='same',kernel_regularizer=regularizers.l2(0.01))(conv3)
+	# # conv1_4=multiply([conv1_bn,conv1_gt1])
+	# conv1_4=multiply([conv4,conv1_gt1])
+	# conv5=BatchNormalization()(conv1_4)
 
-	pool1=MaxPooling2D(pool_size=(2,1),strides=(2,1))(conv5)
-	pool1=Dropout(0.25)(pool1)
-	conv1_gt2=Convolution2D(64, (2, 1), activation='sigmoid', padding='same',kernel_regularizer=regularizers.l2(0.01))(pool1)
-	# conv4_branch=Convolution2D(64, (1, 1), activation='relu', padding='same',kernel_regularizer=regularizers.l2(0.01))(pool1)
-	conv4=Convolution2D(64, (2, 1), activation='relu', padding='same',kernel_regularizer=regularizers.l2(0.01))(pool1)
-	conv4=BatchNormalization()(conv4)
-	conv5=Convolution2D(64, (2, 1), activation='relu', padding='same',kernel_regularizer=regularizers.l2(0.01))(conv4)
-	# conv2_5=add([conv4_branch,conv5])
-	conv2_5=multiply([conv1_gt2,conv5])
-	conv_last=BatchNormalization()(conv2_5)
-	conv_last=Dropout(0.25)(conv_last)
-	time_data=Reshape((-1,64))(conv_last)
+	# pool1=MaxPooling2D(pool_size=(2,1),strides=(2,1))(conv5)
+	# pool1=Dropout(0.25)(pool1)
+	# conv1_gt2=Convolution2D(64, (2, 1), activation='sigmoid', padding='same',kernel_regularizer=regularizers.l2(0.01))(pool1)
+	# # conv4_branch=Convolution2D(64, (1, 1), activation='relu', padding='same',kernel_regularizer=regularizers.l2(0.01))(pool1)
+	# conv4=Convolution2D(64, (2, 1), activation='relu', padding='same',kernel_regularizer=regularizers.l2(0.01))(pool1)
+	# conv4=BatchNormalization()(conv4)
+	# conv5=Convolution2D(64, (2, 1), activation='relu', padding='same',kernel_regularizer=regularizers.l2(0.01))(conv4)
+	# # conv2_5=add([conv4_branch,conv5])
+	# conv2_5=multiply([conv1_gt2,conv5])
+	# conv_last=BatchNormalization()(conv2_5)
+	# conv_last=Dropout(0.25)(conv_last)
+	time_data=Reshape((-1,48))(conv1)
+
 	x1=LSTM(48,return_sequences=True)(time_data)
 	x=LSTM(32,return_sequences=False)(x1)
 	# ft=Flatten()(conv
@@ -369,6 +416,7 @@ def kdd_model_simple_gated(input_shape,output_shape,number_of_input=1):
 	conv5=BatchNormalization()(conv1_4)
 
 	pool1=MaxPooling2D(pool_size=(2,1),strides=(2,1))(conv5)
+	
 	pool1=Dropout(0.25)(pool1)
 	conv1_gt2=Convolution2D(64, (2, 1), activation='sigmoid', padding='same',kernel_regularizer=regularizers.l2(0.01))(pool1)
 	# conv4_branch=Convolution2D(64, (1, 1), activation='relu', padding='same',kernel_regularizer=regularizers.l2(0.01))(pool1)
@@ -516,39 +564,85 @@ def kdd_gated_conv_LSTM(input_shape,output_shape,number_of_input=1):
 
 	# conv1=Dropout(0.5)(conv1)
 	conv1=BatchNormalization()(conv1)
-	gate_conv1 =Convolution2D(48, (5, 1), activation='sigmoid', padding='same')(conv1)
-	conv2=Convolution2D(48, (5, 1), activation='relu', padding='same',use_bias=False,kernel_regularizer=regularizers.l2(0.01))(conv1)
+	gate_conv1 =Convolution2D(48, (3, 1), activation='sigmoid', padding='same')(conv1)
+	conv2=Convolution2D(48, (3, 1), activation='relu', padding='same',use_bias=False,kernel_regularizer=regularizers.l2(0.01))(conv1)
 	conv2=BatchNormalization()(conv2)
-	conv3=Convolution2D(48, (5, 1), activation='relu', padding='same',use_bias=False,kernel_regularizer=regularizers.l2(0.01))(conv2)
+	conv3=Convolution2D(48, (3, 1), activation='relu', padding='same',use_bias=False,kernel_regularizer=regularizers.l2(0.01))(conv2)
 	gate_conv2 = multiply([gate_conv1,conv3])
 	gate_conv2=BatchNormalization()(gate_conv2)
 
 	pool1=MaxPooling2D(pool_size=(2,1),strides=(2,1))(gate_conv2)
 	pool1=Dropout(0.25)(pool1)
-	gate_conv3 =Convolution2D(64, (5, 1), activation='sigmoid', padding='same')(pool1)
-	conv4=Convolution2D(64, (5, 1), activation='relu', padding='same',use_bias=False,kernel_regularizer=regularizers.l2(0.01))(pool1)
+	gate_conv3 =Convolution2D(64, (3, 1), activation='sigmoid', padding='same')(pool1)
+	conv4=Convolution2D(64, (3, 1), activation='relu', padding='same',use_bias=False,kernel_regularizer=regularizers.l2(0.01))(pool1)
 	conv4=BatchNormalization()(conv4)
-	conv5=Convolution2D(64, (5, 1), activation='relu', padding='same',use_bias=False,kernel_regularizer=regularizers.l2(0.01))(conv4)
+	conv5=Convolution2D(64, (3, 1), activation='relu', padding='same',use_bias=False,kernel_regularizer=regularizers.l2(0.01))(conv4)
 	# conv5=BatchNormalization()(conv5)
 	gate_conv3 = multiply([gate_conv3,conv5])
 	gate_conv3=BatchNormalization()(gate_conv3)
-	pool2=MaxPooling2D(pool_size=(2,1),strides=(2,1))(gate_conv3 )
-	pool2=Dropout(0.25)(pool2)
+	# pool2=MaxPooling2D(pool_size=(2,1),strides=(2,1))(gate_conv3 )
+	# pool2=Dropout(0.25)(pool2)
 
-	gate_conv4=Convolution2D(128, (3, 1), activation='sigmoid', padding='same')(pool2)
-	conv6=Convolution2D(128, (3, 1), activation='relu', padding='same',use_bias=False,kernel_regularizer=regularizers.l2(0.01))(pool2)
-	conv6=BatchNormalization()(conv6)
-	conv7=Convolution2D(128, (3, 1), activation='relu', padding='same',use_bias=False,kernel_regularizer=regularizers.l2(0.01))(conv6)
-	# conv7=BatchNormalization()(conv7)
-	gate_conv4 = multiply([gate_conv4,conv7])
-	gate_conv4=BatchNormalization()(gate_conv4)
-	time_data=Reshape((-1,128))(gate_conv4)
+	# gate_conv4=Convolution2D(128, (3, 1), activation='sigmoid', padding='same')(pool2)
+	# conv6=Convolution2D(128, (3, 1), activation='relu', padding='same',use_bias=False,kernel_regularizer=regularizers.l2(0.01))(pool2)
+	# conv6=BatchNormalization()(conv6)
+	# conv7=Convolution2D(128, (3, 1), activation='relu', padding='same',use_bias=False,kernel_regularizer=regularizers.l2(0.01))(conv6)
+	# # conv7=BatchNormalization()(conv7)
+	# gate_conv4 = multiply([gate_conv4,conv7])
+	# gate_conv4=BatchNormalization()(gate_conv)
+	time_data=Reshape((-1,64))(gate_conv3)
 
-	x=LSTM(64,return_sequences=False)(time_data)
+	x=LSTM(64,return_sequences=False,unroll=True)(time_data)
 	# x=LSTM(32,return_sequences=False)(x1)
 	# ft=Flatten()(conv
 	# ft =Flatten()(conv_last)
 	out=Dense(6)(x)
+	return ip,out
+
+	
+	# ft=Flatten()(gate_conv4)
+	# d=Dense(128,kernel_regularizer=regularizers.l2(0.01))(ft)
+	# d=BatchNormalization()(d)
+	# d=Dropout(0.5)(d)
+	# # print(d)
+	# n =output_shape[0]
+	# print(n)
+def kdd_gated_conv_LSTM_2(input_shape,output_shape,number_of_input=1):
+	ip = Input(shape=input_shape)
+	print (input_shape)
+	#em=Embedding(100,100)(ip)
+	conv0=SeparableConv2D(128, (1, input_shape[1]), activation='relu', padding='valid',use_bias=False,kernel_regularizer=regularizers.l1(0.01))(ip)
+	conv0=Dropout(0.5)(conv0)
+	conv0=BatchNormalization()(conv0)
+	embeded_tensor=Permute((1,3,2))(conv0)
+	conv1=Convolution2D(64, (1, 128), activation='relu', padding='valid',use_bias=False,kernel_regularizer=regularizers.l2(0.01))(embeded_tensor)
+
+	# conv1=Dropout(0.5)(conv1)
+	conv1=BatchNormalization()(conv1)
+	gate_conv1 =Convolution2D(48, (3, 1), activation='sigmoid', padding='same')(conv1)
+	conv2=Convolution2D(48, (3, 1), activation='relu', padding='same',use_bias=False,kernel_regularizer=regularizers.l2(0.01))(conv1)
+	conv2=BatchNormalization()(conv2)
+	conv3=Convolution2D(48, (3, 1), activation='relu', padding='same',use_bias=False,kernel_regularizer=regularizers.l2(0.01))(conv2)
+	gate_conv2 = multiply([gate_conv1,conv3])
+	gate_conv2=BatchNormalization()(gate_conv2)
+
+	pool1=MaxPooling2D(pool_size=(2,1),strides=(2,1))(gate_conv2)
+	pool1=Dropout(0.25)(pool1)
+	gate_conv3 =Convolution2D(64, (3, 1), activation='sigmoid', padding='same')(pool1)
+	conv4=Convolution2D(64, (3, 1), activation='relu', padding='same',use_bias=False,kernel_regularizer=regularizers.l2(0.01))(pool1)
+	conv4=BatchNormalization()(conv4)
+	conv5=Convolution2D(64, (3, 1), activation='relu', padding='same',use_bias=False,kernel_regularizer=regularizers.l2(0.01))(conv4)
+	# conv5=BatchNormalization()(conv5)
+	gate_conv3 = multiply([gate_conv3,conv5])
+	gate_conv3=BatchNormalization()(gate_conv3)
+	time_data=Reshape((-1,64))(gate_conv3)
+
+	l1=LSTM(64,return_sequences=True,unroll=True)(time_data)
+	l2=LSTM(64,return_sequences=False,unroll=True)(l1)
+	# x=LSTM(32,return_sequences=False)(x1)
+	# ft=Flatten()(conv
+	# ft =Flatten()(conv_last)
+	out=Dense(6)(l2)
 	return ip,out
 
 	
@@ -617,56 +711,71 @@ def kdd_gated_model_3blocks(input_shape,output_shape,number_of_input=1):
 	conv0=Dropout(0.5)(conv0)
 	conv0=BatchNormalization()(conv0)
 	embeded_tensor=Permute((1,3,2))(conv0)
-	conv1=Convolution2D(64, (1, 128), activation='relu', padding='valid',kernel_regularizer=regularizers.l2(0.01))(embeded_tensor)
+	conv1=Convolution2D(48, (1, 128), activation='relu', padding='valid',kernel_regularizer=regularizers.l2(0.01))(embeded_tensor)
 
 	# conv1=Dropout(0.5)(conv1)
 	conv1=BatchNormalization()(conv1)
-	gate_conv1 =Convolution2D(32, (5, 1), activation='sigmoid', padding='same')(conv1)
-	conv2=Convolution2D(32, (5, 1), activation='relu', padding='same',kernel_regularizer=regularizers.l2(0.01))(conv1)
+	gate_conv1 =Convolution2D(48, (1, 1), activation='sigmoid', padding='same')(conv1)
+	conv2=Convolution2D(48, (3, 1), activation='relu', padding='same',kernel_regularizer=regularizers.l2(0.01))(conv1)
 	conv2=BatchNormalization()(conv2)
-	conv3=Convolution2D(32, (5, 1), activation='relu', padding='same',kernel_regularizer=regularizers.l2(0.01))(conv2)
+	conv3=Convolution2D(48, (3, 1), activation='relu', padding='same',kernel_regularizer=regularizers.l2(0.01))(conv2)
 	gate_conv2 = multiply([gate_conv1,conv3])
 	gate_conv2=BatchNormalization()(gate_conv2)
 
 	pool1=MaxPooling2D(pool_size=(2,1),strides=(2,1))(gate_conv2)
 	pool1=Dropout(0.25)(pool1)
-	gate_conv3 =Convolution2D(64, (5, 1), activation='sigmoid', padding='same')(pool1)
-	conv4=Convolution2D(64, (5, 1), activation='relu', padding='same',kernel_regularizer=regularizers.l2(0.01))(pool1)
+	gate_conv3 =Convolution2D(72, (1, 1), activation='sigmoid', padding='same')(pool1)
+	conv4=Convolution2D(72, (3, 1), activation='relu', padding='same',kernel_regularizer=regularizers.l2(0.01))(pool1)
 	conv4=BatchNormalization()(conv4)
-	conv5=Convolution2D(64, (5, 1), activation='relu', padding='same',kernel_regularizer=regularizers.l2(0.01))(conv4)
+	conv5=Convolution2D(72, (3, 1), activation='relu', padding='same',kernel_regularizer=regularizers.l2(0.01))(conv4)
 	# conv5=BatchNormalization()(conv5)
 	gate_conv3 = multiply([gate_conv3,conv5])
 	gate_conv3=BatchNormalization()(gate_conv3)
 	pool2=MaxPooling2D(pool_size=(2,1),strides=(2,1))(gate_conv3 )
 	pool2=Dropout(0.25)(pool2)
 
-	gate_conv4=Convolution2D(128, (5, 1), activation='sigmoid', padding='same')(pool2)
-	conv6=Convolution2D(128, (5, 1), activation='relu', padding='same',kernel_regularizer=regularizers.l2(0.01))(pool2)
+	gate_conv4=Convolution2D(96, (1, 1), activation='sigmoid', padding='same')(pool2)
+	conv6=Convolution2D(96, (3, 1), activation='relu', padding='same',kernel_regularizer=regularizers.l2(0.01))(pool2)
 	conv6=BatchNormalization()(conv6)
-	conv7=Convolution2D(128(5, 1), activation='relu', padding='same',kernel_regularizer=regularizers.l2(0.01))(conv6)
+	conv7=Convolution2D(96,(3, 1), activation='relu', padding='same',kernel_regularizer=regularizers.l2(0.01))(conv6)
 	# conv7=BatchNormalization()(conv7)
 	gate_conv4 = multiply([gate_conv4,conv7])
 	gate_conv4=BatchNormalization()(gate_conv4)
 	pool3=MaxPooling2D(pool_size=(2,1),strides=(2,1))(gate_conv4 )
 	pool3=Dropout(0.25)(pool3)
 
-	gate_conv5=Convolution2D(196, (5, 1), activation='sigmoid', padding='same')(pool3)
-	conv8=Convolution2D(196, (5, 1), activation='relu', padding='same',kernel_regularizer=regularizers.l2(0.01))(pool3)
+	gate_conv5=Convolution2D(128, (3, 1), activation='sigmoid', padding='same')(pool3)
+	conv8=Convolution2D(128, (3, 1), activation='relu', padding='same',kernel_regularizer=regularizers.l2(0.01))(pool3)
 	conv8=BatchNormalization()(conv8)
-	conv9=Convolution2D(196, (5, 1), activation='relu', padding='same',kernel_regularizer=regularizers.l2(0.01))(conv8)
+	conv9=Convolution2D(128, (3, 1), activation='relu', padding='same',kernel_regularizer=regularizers.l2(0.01))(conv8)
 	# conv7=BatchNormalization()(conv7)
 	gate_conv5 = multiply([gate_conv5,conv9])
 	gate_conv5=BatchNormalization()(gate_conv5)
 
+
+	pool4=MaxPooling2D(pool_size=(2,1),strides=(2,1))(gate_conv5 )
+	pool4=Dropout(0.25)(pool4)
+
+
+	gate_conv6=Convolution2D(168, (3, 1), activation='sigmoid', padding='same')(pool4)
+	conv10=Convolution2D(168, (3, 1), activation='relu', padding='same',kernel_regularizer=regularizers.l2(0.01))(pool4)
+	conv10=BatchNormalization()(conv10)
+	conv11=Convolution2D(168, (3, 1), activation='relu', padding='same',kernel_regularizer=regularizers.l2(0.01))(conv10)
+	# conv7=BatchNormalization()(conv7)
+	gate_conv7 = multiply([gate_conv6,conv11])
+	gate_conv7=BatchNormalization()(gate_conv7)
+
 	
-	ft=Flatten()(gate_conv5)
-	d=Dense(128,kernel_regularizer=regularizers.l2(0.01))(ft)
+	ft=Flatten()(gate_conv7)
+	d=Dense(32,kernel_regularizer=regularizers.l2(0.01))(ft)
 	d=BatchNormalization()(d)
-	d=Dropout(0.5)(d)
+	d1=Dense(32,kernel_regularizer=regularizers.l2(0.01))(d)
+	d1=BatchNormalization()(d1)
+	d1=Dropout(0.5)(d1)
 	# print(d)
 	n =output_shape[0]
 	print(n)
-	out =Dense(n)(d)
+	out =Dense(n)(d1)
 	return ip,out
 
 def kdd_model_old(input_shape,output_shape):

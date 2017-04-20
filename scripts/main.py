@@ -10,7 +10,7 @@ from keras.optimizers import RMSprop, SGD,Adam
 import matplotlib.pyplot as plt
 from keras import metrics
 from keras import losses
-from datetime import datetime,timedelta
+from datetime import datetime,timedelta,time
 import os
 import argparse
 # import lightgbm as lgb
@@ -46,8 +46,11 @@ test_time_list =[time_range_day1_am,time_range_day1_pm,time_range_day2_am,time_r
 
 
 deep_models={}
+deep_models['res_incpet']=kdd_deep_models.kdd_incep_res_model
 deep_models['gated_cnn_1']=kdd_deep_models.kdd_gated_model
+deep_models['gate_cnn_3pool']=kdd_deep_models.kdd_gated_model_3blocks
 deep_models['gated_conv_LSTM']=kdd_deep_models.kdd_gated_conv_LSTM
+deep_models['gated_conv_LSTM2']=kdd_deep_models.kdd_gated_conv_LSTM_2
 deep_models['simple_inception']=kdd_deep_models.kdd_model_inception
 deep_models['simple_gate']=kdd_deep_models.kdd_model_simple_gated
 deep_models['simple_gate_condition']=kdd_deep_models.kdd_model_simple_gated_condition_prob
@@ -63,7 +66,7 @@ def get_model_and_weightFile(args):
 	model = deep_models[args.model]
 	# print (args)
 	phase =args.phase
-	model_save_file ='time_record_based_'+args.model +'_'+args.route_id +'_' +'I'+str(args.interval) +'_T'+str(args.given_time)
+	model_save_file ='time_record_based_'+args.model +'_'+args.route_id +'_' +'I'+str(args.interval) +'_T'+str(args.given_time)+'_P'+str(args.y_interval)
 	combined_routeID_features =''
 	if hasattr(args,'clist'):
 		for r_id in args.clist:
@@ -73,7 +76,7 @@ def get_model_and_weightFile(args):
 		model_save_file+='_No_holiday_data_'
 		# ipdb.set_trace()
 	if args.sample_weight:
-		model_save_file +=model_save_file +'_sample_weight_'
+		model_save_file +='_sample_weight_'
 	model_save_file+=combined_routeID_features+'.h5'
 	return model, model_save_file
 def change_sample_weight(sample_weights,d1,d2):
@@ -83,6 +86,12 @@ def change_sample_weight(sample_weights,d1,d2):
 	sample_weights[~idx]=d2
 	# ipdb.set_trace()
 	return sample_weights
+def train_data_file_name(args):
+	data_file ='X_Y_record_based_'+args.route_id +'_' +'_T'+str(args.given_time)+'_P'+str(args.y_interval)
+	if args.remove_holiday:
+		data_file+='_No_holiday_data'
+	data_file ='./data/'+data_file +'.h5'
+	return data_file
 
 def load_X_Y(args):
 	data_file ='X_Y_'+args.route_id +'_' +'I'+str(args.interval) +'_T'+str(args.given_time)
@@ -122,10 +131,7 @@ def save_X_Y(args,X,Y,sample_weights):
 	f.close()
 		# return X,Y
 def save_X_Y_record_based_data(args,X,Y,sample_weights):
-	data_file ='X_Y_record_based_'+args.route_id +'_' +'_T'+str(args.given_time)
-	if args.remove_holiday:
-		data_file+='_No_holiday_data'
-	data_file ='./data/'+data_file +'.h5'
+	data_file=train_data_file_name(args)
 	# if os.path.exists(data_file):
 	f=h5py.File(data_file,'w')
 	f.create_dataset("./X", data=X)
@@ -134,10 +140,11 @@ def save_X_Y_record_based_data(args,X,Y,sample_weights):
 	f.close()
 
 def load_X_Y_record_based_data(args):
-	data_file ='X_Y_record_based_'+args.route_id +'_' +'_T'+str(args.given_time)
-	if args.remove_holiday:
-		data_file+='_No_holiday_data'
-	data_file ='./data/'+data_file +'.h5'
+	# data_file ='X_Y_record_based_'+args.route_id +'_' +'_T'+str(args.given_time) +'_P'+str(args.y_interval)
+	# if args.remove_holiday:
+	# 	data_file+='_No_holiday_data'
+	# data_file ='./data/'+data_file +'.h5'
+	data_file=train_data_file_name(args)
 	print('load training data from : {} '.format(data_file))
 	if os.path.exists(data_file):
 		f=h5py.File(data_file,'r')
@@ -238,10 +245,16 @@ def predict_ensemble_deep_model_on_diff_sample(X,output_shape,model_save_file=No
 	Y_p={}
 	for i in range(num_models):
 		weight_file=model_save_file[:-3]+'_s'+str(i)+'.h5'
+		# weight_file=model_save_file[:-3]+'.h5'
 		print('ensemble predict {} model {}'.format(i,weight_file))
 		Y_p[i]=[]
+		# ipdb.set_trace()
 		for j in range(len(X)):
-			Y_p[i].append(model_predict([X[j]],output_shape,weight_file,model_create_Func=model_create_Func))
+			D=X[j]
+			if 'LSTM' in model_save_file  and 'conv' not in model_save_file:
+				D=np.squeeze(X[j],axis=-1)
+				# ipdb.set_trace()
+			Y_p[i].append(model_predict([D],output_shape,weight_file,model_create_Func=model_create_Func))
 	Y_k=list(Y_p.keys())
 	Y_k.sort()
 	All=[Y_p[i] for i in Y_k]
@@ -251,8 +264,95 @@ def predict_ensemble_deep_model_on_diff_sample(X,output_shape,model_save_file=No
 	return Y
 
 # def mape_and_variance_loss(Y_Pred,Y_True):
+def train_ensemble_deep_model_with_generator(args,model_save_file=None,model_create_Func=None,num_models=10):
+	y_interval =20
+	data_dim =3 if 'LSTM' in args.model and 'conv' not in args.model else 4
+	print('data dim ={}').format(data_dim)
+	traj_records,link_ids=kdd_DATA.get_traj_raw_records_train(args.route_id)
+	RBTD=kdd_data.record_based_traj_data(traj_records,link_ids)
+	time_slots_for_sample_weights=((time(8,0),time(10,0)),(time(17,0),time(19,0)))
+	RBTD.set_train_generator(args.route_id,predict_all_routes=False,
+							time_slots_for_sample_weights=time_slots_for_sample_weights,
+							y_interval=y_interval,p_hours=args.given_time,
+							data_dim=data_dim)
+	input_shape=RBTD.get_train_data_shape()
+	if args.use_all_routes:
+		output_shape=(60*2/y_interval*6,)
+	else:
+		output_shape=(60*2/y_interval,)
+	# ipdb.set_trace()
+	# output_shape=(60*2/y_interval*6,)
+	for i in range(num_models):
+		ip,out=model_create_Func(input_shape,output_shape,1)
+		model=Model(ip,out)
+		optimizer =Adam(lr=0.001, beta_1=0.9, beta_2=0.999, epsilon=1e-08, decay=0.00001)
+		model.compile(optimizer=optimizer, loss=mape_exclude_zero_loss, metrics=[mape_exclude_zero_loss])#[metrics.mape])
+		model.summary()
+		
+		early_stop =EarlyStopping(monitor='val_loss', min_delta=0, patience=30, verbose=0, mode='auto')
+		tensorboard= TensorBoard(log_dir='./logs',histogram_freq=0,write_graph=True,write_images=False)
+		weight_file='./weight/'+model_save_file[:-3]+'_s'+str(i)+'.h5'
+		RBTD.train_val_partition(part_ratio=0.2,rand_seed=i)
+		if os.path.isfile(weight_file):
+			try:
+				model.load_weights(weight_file)
+			except:
+				print ('the model {} can not  be loaded'.format(weight_file))
+				pass
+		best_model = ModelCheckpoint(weight_file, verbose = 1, save_best_only = True)
+		history=model.fit_generator(RBTD.generator(RBTD.train_list), steps_per_epoch = 100,epochs =60,
+								validation_data=RBTD.generator(RBTD.val_list,yield_weight=False,rand_seed=5,phase='validation'),
+	 							verbose=1 ,workers=1, validation_steps=5,
+								callbacks = [tensorboard,best_model,early_stop])
 
+def train_deep_model_with_generator(args,model_save_file=None,model_create_Func=None,rand_seed=0):
+	
+	# ttt=RBTD.train_generator()
+	# ipdb.set_trace()
+	y_interval =20
+	data_dim =3 if 'LSTM' in args.model and 'conv' not in args.model else 4
+	print('data dim ={}').format(data_dim)
+	traj_records,link_ids=kdd_DATA.get_traj_raw_records_train(args.route_id)
+	RBTD=kdd_data.record_based_traj_data(traj_records,link_ids)
+	time_slots_for_sample_weights=((time(8,0),time(10,0)),(time(17,0),time(19,0)))
+	RBTD.set_train_generator(args.route_id, predict_all_routes=False, 
+							time_slots_for_sample_weights=time_slots_for_sample_weights,
+							y_interval=y_interval,p_hours=args.given_time,
+							data_dim=data_dim)
+	RBTD.train_val_partition(part_ratio=0.2,rand_seed=rand_seed)
+	input_shape=RBTD.get_train_data_shape()
+	if args.use_all_routes:
+		output_shape=(60*2/y_interval*6,)
+	else:
+		output_shape=(60*2/y_interval,)
+	ipdb.set_trace()
+	ip,out=model_create_Func(input_shape,output_shape,1)
+	model=Model(ip,out)
 
+	weight_file='./weights/'+ model_save_file
+	if os.path.isfile(weight_file):
+		try:
+			model.load_weights(weight_file)
+		except:
+			print ('the model {} can not  be loaded'.format(weight_file))
+			pass
+	optimizer =Adam(lr=0.001, beta_1=0.9, beta_2=0.999, epsilon=1e-08, decay=0.00001)
+	model.compile(optimizer=optimizer, loss=mape_exclude_zero_loss, metrics=[mape_exclude_zero_loss])#[metrics.mape])
+	model.summary()
+	best_model = ModelCheckpoint(weight_file, verbose = 1, save_best_only = True)
+	early_stop =EarlyStopping(monitor='val_loss', min_delta=0, patience=30, verbose=0, mode='auto')
+	tensorboard= TensorBoard(log_dir='./logs',histogram_freq=0,write_graph=True,write_images=False)
+	history=model.fit_generator(RBTD.generator(RBTD.train_list), steps_per_epoch = 50,epochs =100,
+								validation_data=RBTD.generator(RBTD.val_list,yield_weight=False,rand_seed=5,phase='validation'),
+	 							verbose=1 ,workers=1, validation_steps=50,
+								callbacks = [tensorboard,best_model,early_stop])
+	# history=model.fit_generator(RBTD.generator(RBTD.train_list), steps_per_epoch = 1000,epochs =45,
+	# 							validation_data=None,
+	#  							verbose=1 ,workers=1, validation_steps=20, max_q_size=10, 
+	# 							callbacks = [tensorboard])
+	# history=model.fit_generator(RBTD.generator(RBTD.train_list), steps_per_epoch = 1000,epochs =45,
+	#  							verbose=1 ,workers=1, 
+	# 							callbacks = [tensorboard,best_model,early_stop])
 def train_deep_model(X_train,Y_train,X_val,Y_val,model_save_file=None,model_create_Func=None,sample_weights=None):
 	# row =75
 	# col =24
@@ -291,13 +391,13 @@ def train_deep_model(X_train,Y_train,X_val,Y_val,model_save_file=None,model_crea
 	# from sklearn.model_selection import KFold
 	# f = KFold(n_splits=2)
 	# optimizer =RMSprop(lr = 0.0001)
-	optimizer =Adam(lr=0.0002, beta_1=0.9, beta_2=0.999, epsilon=1e-08, decay=0.00001)
+	optimizer =Adam(lr=0.001, beta_1=0.9, beta_2=0.999, epsilon=1e-08, decay=0.00001)
 	model.compile(optimizer=optimizer, loss=mape_exclude_zero_loss, metrics=[mape_exclude_zero_loss])#[metrics.mape])
 	model.summary()
 	best_model = ModelCheckpoint(weight_h5_file, verbose = 1, save_best_only = True)
 	early_stop =EarlyStopping(monitor='val_loss', min_delta=0, patience=20, verbose=0, mode='auto')
 	tensorboard= TensorBoard(log_dir='./logs',histogram_freq=0,write_graph=True,write_images=False)
-	history=model.fit(x=X_train,y=Y_train, batch_size=64,epochs = 150, validation_data=(X_val,Y_val), \
+	history=model.fit(x=X_train,y=Y_train, batch_size=96,epochs = 150, validation_data=(X_val,Y_val), \
 					callbacks = [tensorboard,best_model,early_stop],sample_weight=sample_weights,
 					 shuffle=True)
 	# history=model.fit(x=X_train,y=Y_train, epochs = 600, validation_split=0.05, \
@@ -340,24 +440,29 @@ def model_predict(X_test,output_shape,model_weight_file=None,model_create_Func=N
 	else:
 		model_name ='sample_conv.h5'
 	# model_name ='sample_conv'
-	weight_h5_file='./weights/'+ model_name
+	weight_h5_file='./weight/'+ model_name
 	if previous_model_file is None or previous_model_file != model_name:
 		print("model predicting ....")
 		if model_create_Func is None:
+			ipdb.set_trace()
 			ip,out=kdd_deep_models.kdd_gated_model(input_shape,output_shape)
 		else:
 			ip,out=model_create_Func(input_shape,output_shape,x_ch_len)
 		model=Model(ip,out)
+		model.summary()
 		# ip,out=kdd_deep_models.kdd_gated_model(input_shape,output_shape)
 		# model=Model(ip,out)
 		previous_model_file =model_weight_file
 		previous_model =model
 		print("model predicting ...." +weight_h5_file)
+		# ipdb.set_trace()
 		model.load_weights(weight_h5_file)
 		# W=model.get_weight()
 	else:
 		model = previous_model
-	return model.predict(X_test)
+	P=model.predict(X_test)
+	# ipdb.set_trace()
+	return P
 	# optimizer =RMSprop(lr = 1e-4)
 	# model.compile(optimizer=optimizer, loss='mean_absolute_percentage_error', metrics=['mape'])
 # def mape(y_true,y_pred):
@@ -438,8 +543,10 @@ if __name__ == "__main__":
 	parser.add_argument("-c","--combine_features", nargs='*',dest='clist', help="list of combine features",default=argparse.SUPPRESS)
 	parser.add_argument("-m","--model", help="select a deep model",default='default_model')
 	parser.add_argument("-t","--given_time",help="preceeding data time length (in hour)",type=float,default =2)
+	parser.add_argument("-yi","--y_interval",help="predicting interval_minutes",type=int,default=20)
 	parser.add_argument("-d","--remove_holiday",help="wheather to remove holiday data",type=bool,default=True)
 	parser.add_argument("-w","--sample_weight",help="apply sample weight on test time",type=bool,default=True)
+	parser.add_argument('-a','--use_all_routes',help="train a single model for all routes",type=bool,default=False)
 	args=parser.parse_args()
 	combined_feature_list =[]
 	print (args)
@@ -503,6 +610,7 @@ if __name__ == "__main__":
 			print ('current_r_id ={}'.format(route_id))
 			args.route_id =route_id
 			model_create_Func,weight_file=get_model_and_weightFile(args)
+			print(weight_file)
 			predict_result[route_id]={}
 			X_time_dict=kdd_DATA.get_traj_record_based_test_data(route_id)
 			time_slots=list(X_time_dict.keys())
@@ -513,10 +621,13 @@ if __name__ == "__main__":
 				# ipdb.set_trace()
 				T_X.append(np.reshape(X_time_dict[time_slot],(1,h,w,1)))
 				# ipdb.set_trace()
+			# A=model_predict(T_X,num_out_put,
+			# 											model_weight_file=weight_file,
+			# 											model_create_Func=model_create_Func)
 			A=predict_ensemble_deep_model_on_diff_sample(T_X,num_out_put,
-														model_save_file=weight_file,
-														model_create_Func=model_create_Func,
-														num_models=6)
+			 											model_save_file=weight_file,
+			 											model_create_Func=model_create_Func,
+			 											num_models=20)
 			for i, time_slot in enumerate(time_slots):
 				predict_result[route_id][time_slot]=A[i]
 		write_submit_traj_file(predict_result)
@@ -615,25 +726,34 @@ if __name__ == "__main__":
 			Y_p=predict_GBM(X_val_1,gbms)
 			Y_p=np.array(Y_p)
 			Y_p=np.transpose(Y_p,(1,0))
-		else: 
+		else:
+			# train_deep_model_with_generator(args,model_save_file=weight_file,model_create_Func=model_create_Func)
+			train_ensemble_deep_model_with_generator(args,model_save_file=weight_file,
+													model_create_Func=model_create_Func,
+													num_models=20)
 			 # X,Y=kdd_DATA.get_traj_record_based_train_data(traj_records)
 			# X,Y=kdd_DATA.get_traj_record_based_train_data()
 			# ipdb.set_trace()
-			X,Y,sample_weights=generate_record_based_data(args)
-			sample_weights=change_sample_weight(sample_weights,1,0.15)
-			# sample_weights =None
-			# Y=np.array(Y)
-			# ipdb.set_trace()
-			X=np.expand_dims(X,axis=3)
-			X_train_2D =X
-			Y_train =Y
-			train_ensemble_deep_model_on_diff_sample(X=X_train_2D,Y=Y_train,model_save_file=weight_file, \
-													model_create_Func=model_create_Func,\
-													sample_weights=sample_weights,start_model=0)
+
+			#============== train on saved data ======================================
+			# X,Y,sample_weights=generate_record_based_data(args)
+			# sample_weights=change_sample_weight(sample_weights,1,0.3)
+			# if not args.sample_weight:
+			# 	sample_weights =None
+			# # sample_weights =None
+			# # Y=np.array(Y)
+			# # ipdb.set_trace()
+			# X=np.expand_dims(X,axis=3)
+			# X_train_2D =X
+			# Y_train =Y
 			# train_ensemble_deep_model_on_diff_sample(X=X_train_2D,Y=Y_train,model_save_file=weight_file, \
 			# 										model_create_Func=model_create_Func,\
-			# 										sample_weights=None)
-			Y_p=predict_ensemble_deep_model_on_diff_sample([X_val],outshape,weight_file,model_create_Func)
+			# 										sample_weights=sample_weights,start_model=0)
+			# # train_ensemble_deep_model_on_diff_sample(X=X_train_2D,Y=Y_train,model_save_file=weight_file, \
+			# # 										model_create_Func=model_create_Func,\
+			# # 										sample_weights=None)
+			# Y_p=predict_ensemble_deep_model_on_diff_sample([X_val],outshape,weight_file,model_create_Func)
+			#============== train on saved data ================================================================
 		# Y_p=model_predict([X_val],[6],weight_file,model_create_Func)
 		print ('my mape = {}'.format(np.mean(np.abs((Y_val - Y_p) / Y_val)) * 100))
 

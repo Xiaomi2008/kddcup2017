@@ -8,6 +8,7 @@ from sklearn import linear_model
 from sklearn.cross_validation import cross_val_predict
 import ipdb
 import pandas as pd
+import random
 # import time
 from datetime import datetime, date, time
 import progressbar
@@ -43,10 +44,11 @@ test_time_list =[time_range_day1_am,time_range_day1_pm,time_range_day2_am,time_r
 					time_range_day7_am,time_range_day7_pm]
 nholidays=[('2016-09-15 00:00:00','2016-09-18 00:00:00'),
 			('2016-10-1 00:00:00','2016-10-9 00:00:00')]
+colum_num=128
 
 def find_time_range(two_h_interval_list,start_time):
 		for i,time_range in enumerate(two_h_interval_list):
-			if time_range[0] <=start_time and time_range[1] >start_time:
+			if start_time >=time_range[0] and start_time<time_range[1]:
 				return i , time_range[0]
 
 def one_hot(num,length):
@@ -68,6 +70,7 @@ class time_recod_data():
 		self.car_traj_time={}
 		self.car_start_time={}
 		self.weather={}
+		
 		# self.
 	def zero_init(self,link_ids):
 		for l_id in link_ids:
@@ -78,10 +81,12 @@ class record_based_traj_data():
 	def __init__(self,traj_records,link_ids):
 		self.gather_traj_time_info(traj_records,link_ids)
 		self.holidays =[]
+		self.X_num_colum=120
 		for s_time_str,e_time_str in nholidays:
 			start_time= datetime.strptime(s_time_str, "%Y-%m-%d %H:%M:%S")
 			end_time= datetime.strptime(e_time_str, "%Y-%m-%d %H:%M:%S")
 			self.holidays.append((start_time,end_time))
+
 	def time_in_holiday(self,given_time):
 		in_range =False
 		for start_time, end_time in self.holidays:
@@ -93,7 +98,8 @@ class record_based_traj_data():
 
 	def gather_traj_time_info(self,traj_records,link_ids):
 		self.traj_time_list=[time_traj_to_vector(each_record,link_ids) for each_record in traj_records]
-	# def generate_training_data(self,route_id,time_slots_for_sample_weight=None,y_interval=20,p_hours=2):
+
+	# def generate_training_data_sample_on_route_id(self,route_id,time_slots_for_sample_weight=None,y_interval=20,p_hours=2):
 	# 	colum_num =120
 	# 	train_hours=p_hours
 	# 	predict_hours=2
@@ -107,8 +113,254 @@ class record_based_traj_data():
 	# 	print('generate data list...')
 	# 	traj_routeID_time_list=[time_traj_obj for time_traj_obj in self.traj_time_list if time_traj_obj.route_id==route_id]
 	# 	with progressbar.ProgressBar(max_value=len(self.traj_time_list)) as bar:
-	def generate_training_data(self,route_id,time_slots_for_sample_weights=None, remove_holiday_data=True,y_interval=20,p_hours=2):
-		colum_num =120
+	def set_train_generator(self,route_id, predict_all_routes=False,
+							time_slots_for_sample_weights=None, 
+							remove_holiday_data=True,
+							y_interval=20,p_hours=2,data_dim=4):
+		self.route_id=route_id
+		self.time_slots_for_sample_weights=time_slots_for_sample_weights
+		self.remove_holiday_data=remove_holiday_data
+		self.y_interval=y_interval
+		self.p_hours=p_hours
+		self.data_dim =data_dim
+		self.predict_all_routes =predict_all_routes
+		self.X_num_colum =120 if not predict_all_routes else 480
+		# ipdb.set_trace()
+		if self.remove_holiday_data:
+			if  not predict_all_routes:
+				self.traj_routeID_list=[time_traj_obj for time_traj_obj in self.traj_time_list 
+										if time_traj_obj.route_id==self.route_id \
+										and not self.time_in_holiday(time_traj_obj.trace_start_time)]
+			else:
+				self.traj_routeID_list=[time_traj_obj for time_traj_obj in self.traj_time_list 
+										if not self.time_in_holiday(time_traj_obj.trace_start_time)]
+
+		else:
+			if  not predict_all_routes:
+				self.traj_routeID_list=[time_traj_obj for time_traj_obj in self.traj_time_list if time_traj_obj.route_id==self.route_id]
+			else:
+				self.traj_routeID_list=[time_traj_obj for time_traj_obj in self.traj_time_list]
+									# if time_traj_obj.route_id==self.route_id or time_traj_obj.route_id=='C-1']#and time_traj_obj.route_id=='C-1']
+		# ipdb.set_trace()
+	def train_val_partition(self,part_ratio =0.2,rand_seed=None):
+		num_d_points 	= 	len(self.traj_routeID_list)
+		parts_num 		=	int(1/part_ratio)
+		part_length 	=	num_d_points/parts_num
+		part_idx 		=	num_d_points-part_length-1
+		self.rand_seed  =   rand_seed
+		if rand_seed:
+			random.seed(rand_seed)
+		# ipdb.set_trace()
+		val_start_idx	= 	random.randint(0,part_idx)
+		val_end_idx  	= 	val_start_idx+part_length
+		part_idxs		=	range(val_start_idx,val_end_idx)
+				
+		self.train_list =   [traj_obj for i,traj_obj in enumerate(self.traj_routeID_list) if i not in part_idxs]
+		self.val_list 	=   [traj_obj for i,traj_obj in enumerate(self.traj_routeID_list) if i in part_idxs]
+		# ipdb.set_trace()
+		# return self.train_list, self.val_list
+
+
+	def get_train_data_shape(self):
+		h=self.X_num_colum
+		w=len(self.traj_time_list[0].vector[0])+1
+		c=1
+		if self.data_dim==4:
+			data_shape=(h,w,c)
+		else:
+			data_shape=(h,w)
+		# ipdb.set_trace()
+		return data_shape
+
+	def generator(self,traj_obj_list,yield_weight =True,rand_seed=None,phase='train'):
+	
+		route_ids=[self.route_id] if not self.predict_all_routes else ['A-2','A-3','B-1','B-3','C-1','C-3']
+		colum_num =self.X_num_colum
+		train_hours=self.p_hours
+		predict_hours=2
+		max_records=0
+		batch_size =96
+		range_preceding_minutes= 20 
+		
+		# print('generate data list...')
+		traj_routeID_time_list=traj_obj_list
+		len_sample =len(traj_routeID_time_list)
+		if rand_seed is not None:
+			random.seed(rand_seed)
+		else:
+			random.seed(self.rand_seed)
+		while True:
+			X=[]
+			Y=[]
+
+			if self.time_slots_for_sample_weights is not None:
+				s_weights =[]
+			else:
+				s_weights =None
+
+			loop =0
+			while len(X)<batch_size:
+				# print ('loop ={} , len(X) = {}'.format(loop,len(X)))
+				loop+=1
+				each_X =[]
+				each_Y =[]
+				idx =random.randint(0,len_sample-1)
+				preceeding_minutes =random.randint(0,range_preceding_minutes-1)
+				rand_seconds  =random.randint(0,59)
+				s_time =traj_routeID_time_list[idx].trace_start_time
+				x_start_time= datetime(s_time.year, s_time.month, s_time.day,
+													s_time.hour, s_time.minute, s_time.second)
+				# if phase =='train':
+				x_start_time -=timedelta(minutes=preceeding_minutes,seconds=rand_seconds)
+				# x_start_time -=timedelta(seconds=rand_seconds)
+				x_end_time=x_start_time+timedelta(hours=train_hours)
+				# ipdb.set_trace()
+
+				#--------------------------- prepare X -----------------------------------
+				n_pos =1
+				r_id_count =0
+				count_record =0
+
+				# backward search
+				# if phase=='validation':
+				while idx-n_pos>=0:
+						cur_time =traj_routeID_time_list[idx-n_pos].trace_start_time
+						cur_record_obj=traj_routeID_time_list[idx-n_pos]
+						# if traj_routeID_time_list[idx-n_pos].route_id ==self.route_id and \
+						# to_end_time_sec_diff=(x_end_time-cur_time).seconds
+						to_end_time_sec_diff=(cur_time-x_start_time).seconds
+						if cur_time >=x_start_time and \
+											cur_time <x_end_time:
+							
+							if self.remove_holiday_data:
+								if not self.time_in_holiday(cur_time):
+									# cur_record_obj.vector.append(to_end_time_sec_diff)
+									# ipdb._set_trace()
+									each_X.append(cur_record_obj.vector[0]+[to_end_time_sec_diff])
+									# ipdb.set_trace()
+									r_id_count+=1
+								else:
+									pass
+									# print('time in holiday ={}'.format(cur_time))
+							else:
+								# cur_record_obj.vector.append(to_end_time_sec_diff)
+								each_X.append(cur_record_obj.vector[0]+[to_end_time_sec_diff])
+								r_id_count+=1
+								
+						if cur_time <x_start_time \
+								   and cur_record_obj.route_id ==self.route_id \
+								   or r_id_count>=colum_num:
+										break;
+						n_pos+=1
+				each_X.reverse()	
+
+				#forward search
+				pos=0
+				while idx+pos<len(traj_routeID_time_list):
+					cur_time =traj_routeID_time_list[idx+pos].trace_start_time
+					to_end_time_sec_diff=(cur_time-x_start_time).seconds
+					cur_record_obj=traj_routeID_time_list[idx+pos]
+					# if traj_routeID_time_list[idx+pos].route_id ==self.route_id and \
+					if cur_time >=x_start_time and \
+										cur_time <x_end_time:
+						
+						if self.remove_holiday_data:
+							if not self.time_in_holiday(cur_time):
+								# cur_record_obj.vector.append(to_end_time_sec_diff)
+								# ipdb.set_trace()
+								each_X.append(cur_record_obj.vector[0]+[to_end_time_sec_diff])
+								r_id_count+=1
+								# ipdb.set_trace()
+							else:
+								pass
+								# print('time in holiday ={}'.format(cur_time))
+						else:
+							# cur_record_obj.vector.append(to_end_time_sec_diff)
+							each_X.append(cur_record_obj.vector[0]+[to_end_time_sec_diff])
+							r_id_count+=1
+							
+					if cur_time >=x_end_time \
+							   and cur_record_obj.route_id ==self.route_id \
+							   or r_id_count>=colum_num:
+									break;
+					pos+=1
+					count_record+=1
+
+				max_records =r_id_count if max_records <r_id_count else max_records
+				# print ('max_records ={}'.format(max_records))
+				# -----------------------prepare Y--------------------------------------
+				num_y_interval =predict_hours*60/self.y_interval
+				# ipdb.set_trace()
+				
+				for route_id in route_ids:
+					y_start_time =x_end_time
+					y_j=0
+					for j in range(num_y_interval):
+						y_end_time =y_start_time+timedelta(minutes=self.y_interval)
+						y_temp=[]
+						y_idx=idx+pos+y_j
+						while idx+pos+y_j<len_sample:
+							y_record_obj=traj_routeID_time_list[idx+pos+y_j]
+							if y_record_obj.route_id==route_id:
+								if y_record_obj.trace_start_time>y_end_time:
+									break
+								if y_record_obj.trace_start_time>=y_start_time:
+									y_temp.append(y_record_obj.travel_time)
+							y_j+=1
+						y_start_time=y_end_time
+						if len(y_temp) ==0:
+							each_Y.append(0)
+						else:
+							each_Y.append(np.mean(y_temp))
+
+				#--------------------------- prepare sample weights ----------------------
+				if len(each_X) >0: 
+					if self.time_slots_for_sample_weights is not None:
+						num_slots =len(self.time_slots_for_sample_weights)
+						s_weight =0.5
+						time_in_mid_y =y_end_time-timedelta(minutes=predict_hours*60.0/2.0)
+						for t1,t2 in self.time_slots_for_sample_weights:
+							if phase=='train':
+								st_time=time(t1.hour-1,t1.minute+55,t1.second)
+								e_time=time(t2.hour,t2.minute+5,t2.second)
+							else:
+								st_time=time(t1.hour,t1.minute+50,t1.second)
+								e_time=time(t2.hour-1,t2.minute+10,t2.second)
+
+							if time_in_mid_y.time()>=st_time \
+								and time_in_mid_y.time()<e_time:
+									s_weight = 1
+									break
+						s_weights.append(s_weight)
+					if phase =='validation':
+						if s_weight==1:
+							X.append(each_X)
+							Y.append(each_Y)
+					else:
+						X.append(each_X)
+						Y.append(each_Y)
+
+			# print('yield one batch...')
+			d_len=len(X)
+			v_len=len(X[0][0])
+			# ipdb.set_trace()
+			X_array=np.zeros((d_len,colum_num,v_len))
+			for i in range(d_len):
+				for j in range(len(X[i])):
+					X_array[i,colum_num-len(X[i])+j]=np.array(X[i][j])
+			X_train=np.expand_dims(X_array,axis=3) if self.data_dim ==4 else X_array
+			# print('g data_dim={}'.format(X_train.shape))
+			Y=np.array(Y)
+			if yield_weight:
+				s_weights=np.array(s_weights)
+				yield (X_train,Y, s_weights)
+			else:
+				yield (X_train,Y)
+
+
+
+	def generate_training_data(self,route_id,time_slots_for_sample_weights=None, remove_holiday_data=True,y_interval=5,p_hours=2):
+		colum_num =128
 		train_hours=p_hours
 		predict_hours=2
 		max_records=0
@@ -119,76 +371,84 @@ class record_based_traj_data():
 		else:
 			s_weights =None
 		print('generate data list...')
+		traj_routeID_time_list=[time_traj_obj for time_traj_obj in self.traj_time_list if time_traj_obj.route_id==route_id]
+		self.traj_time_list=traj_routeID_time_list
 		with progressbar.ProgressBar(max_value=len(self.traj_time_list)) as bar:
 			for i,time_traj_vector_obj in enumerate(self.traj_time_list):
-				each_X =[]
-				each_Y =[]
-				s_time =time_traj_vector_obj.trace_start_time
-				x_start_time= datetime(s_time.year, s_time.month, s_time.day,
-											s_time.hour, s_time.minute, 0)
-				x_end_time=x_start_time+timedelta(hours=train_hours)
-				pos =0
-				r_id_count =0
-				count_record =0
-				while i+pos<len(self.traj_time_list):
-					s_time =self.traj_time_list[i+pos].trace_start_time
+				
+				preceeding_minutes=range(15)
+				for p_m in preceeding_minutes:
+					each_X =[]
+					each_Y =[]
+					s_time =time_traj_vector_obj.trace_start_time
+					minutes = s_time.minute
 					# ipdb.set_trace()
-					if self.traj_time_list[i+pos].route_id ==route_id and \
-						s_time >=x_start_time and \
-						s_time <x_end_time:
-						if remove_holiday_data:
-							# ipdb.set_trace()
-							if not self.time_in_holiday(s_time):
+					x_start_time= datetime(s_time.year, s_time.month, s_time.day,
+												s_time.hour, s_time.minute, 0)
+					x_start_time -=timedelta(minutes=p_m)
+					x_end_time=x_start_time+timedelta(hours=train_hours)
+					pos =0
+					r_id_count =0
+					count_record =0
+					while i+pos<len(self.traj_time_list):
+						cur_time =self.traj_time_list[i+pos].trace_start_time
+						# ipdb.set_trace()
+						if self.traj_time_list[i+pos].route_id ==route_id and \
+							cur_time >=x_start_time and \
+							cur_time <x_end_time:
+							if remove_holiday_data:
+								# ipdb.set_trace()
+								if not self.time_in_holiday(cur_time):
+									each_X.append(self.traj_time_list[i+pos].vector)
+									r_id_count+=1
+							else:
 								each_X.append(self.traj_time_list[i+pos].vector)
 								r_id_count+=1
+						
+						if cur_time >x_end_time \
+						    and self.traj_time_list[i+pos].route_id ==route_id    \
+							or r_id_count>=colum_num:
+								break;
+						pos+=1
+						count_record+=1
+						
+					# max_records =count_record if max_records <count_record else max_records
+					max_records =r_id_count if max_records <r_id_count else max_records
+					num_y_interval =predict_hours*60/y_interval
+					y_start_time =x_end_time
+					
+					y_j=0
+					for j in range(num_y_interval):
+						y_end_time =y_start_time+timedelta(minutes=y_interval)
+						y_temp=[]
+						while i+pos+y_j<len(self.traj_time_list):
+							if self.traj_time_list[i+pos+y_j].route_id ==route_id:
+								if self.traj_time_list[i+pos+y_j].trace_start_time>y_end_time:
+									break
+								if self.traj_time_list[i+pos+y_j].trace_start_time>=y_start_time:
+									y_temp.append(self.traj_time_list[i+pos+y_j].travel_time)
+							y_j+=1
+						y_start_time=y_end_time
+						if len(y_temp) ==0:
+							each_Y.append(0)
 						else:
-							each_X.append(self.traj_time_list[i+pos].vector)
-							r_id_count+=1
+							each_Y.append(np.mean(y_temp))
 					
-					if s_time >x_end_time \
-					    and self.traj_time_list[i+pos].route_id ==route_id    \
-						or r_id_count>=colum_num:
-							break;
-					pos+=1
-					count_record+=1
-					
-				# max_records =count_record if max_records <count_record else max_records
-				max_records =r_id_count if max_records <r_id_count else max_records
-				num_y_interval =predict_hours*60/y_interval
-				y_start_time =x_end_time
-				
-				y_j=0
-				for j in range(num_y_interval):
-					y_end_time =y_start_time+timedelta(minutes=y_interval)
-					y_temp=[]
-					while i+pos+y_j<len(self.traj_time_list):
-						if self.traj_time_list[i+pos+y_j].route_id ==route_id:
-							if self.traj_time_list[i+pos+y_j].trace_start_time>y_end_time:
-								break
-							if self.traj_time_list[i+pos+y_j].trace_start_time>=y_start_time:
-								y_temp.append(self.traj_time_list[i+pos+y_j].travel_time)
-						y_j+=1
-					y_start_time=y_end_time
-					if len(y_temp) ==0:
-						each_Y.append(0)
-					else:
-						each_Y.append(np.mean(y_temp))
-				
-				if len(each_X) >0: 
-					X.append(each_X)
-					Y.append(each_Y)
-					if time_slots_for_sample_weights is not None:
-						num_slots =len(time_slots_for_sample_weights)
-						s_weight =0.1
-						time_in_mid_y =y_end_time-timedelta(minutes=predict_hours*60.0/2.0)
-						for t1,t2 in time_slots_for_sample_weights:
-							s_time=time(t1.hour,t1.minute+45,t1.second)
-							e_time=time(t2.hour-1,t2.minute+15,t2.second)
-							if time_in_mid_y.time()>=s_time and \
-										time_in_mid_y.time()<e_time:
-								s_weight = 1
-								break
-						s_weights.append(s_weight)
+					if len(each_X) >0: 
+						X.append(each_X)
+						Y.append(each_Y)
+						if time_slots_for_sample_weights is not None:
+							num_slots =len(time_slots_for_sample_weights)
+							s_weight =0.1
+							time_in_mid_y =y_end_time-timedelta(minutes=predict_hours*60.0/2.0)
+							for t1,t2 in time_slots_for_sample_weights:
+								st_time=time(t1.hour,t1.minute+15,t1.second)
+								e_time=time(t2.hour-1,t2.minute+45,t2.second)
+								if time_in_mid_y.time()>=st_time and \
+											time_in_mid_y.time()<e_time:
+									s_weight = 1
+									break
+							s_weights.append(s_weight)
 
 
 				bar.update(i)
@@ -203,11 +463,6 @@ class record_based_traj_data():
 		print('converting data list to numpy array...')
 		with progressbar.ProgressBar(max_value=d_len) as bar:
 			for i in range(d_len):
-				# B=np.array(X[i][:],dtype=object).astype(float)
-				# # B= pd.lib.to_object_array(X[i][:]).astype(float)
-				# B=np.reshape(B,(B.shape[0],-1))
-				# X_array[i,:B.shape[0]]=B
-				# print('conver {} out of {}'.format(i,d_len))
 				for j in range(len(X[i])):
 					# ipdb.set_trace()
 					X_array[i,j]=np.array(X[i][j][0])
@@ -226,7 +481,7 @@ class record_based_traj_data():
 		# print (len(traj_data)) 
 		# for i in range(len(traj_data)):
 	def generate_test_data(self,route_id,test_time_list=test_time_list):
-		colum_num=120
+		colum_num =self.X_num_colum
 		test_data_list ={}
 		test_data_X={}
 		route_records  ={}
@@ -246,18 +501,24 @@ class record_based_traj_data():
 		for start_time in start_times:
 			# ipdb.set_trace()
 			i,time_range=find_time_range(two_h_interval,start_time)
+			# ipdb.set_trace()
+			# time_diff=(time_range+timedelta(hours=2)-start_time).seconds
+			time_diff=(start_time-time_range).seconds
+			# ipdb.set_trace()
 			if time_range not in test_data_list.keys():
 				test_data_list[time_range]=[]
+			route_records[start_time].vector[0]+=[time_diff]
 			test_data_list[time_range].append(route_records[start_time])
 
 
 		for timeSlot_key in list(test_data_list.keys()):
-			X=np.zeros((colum_num,v_len))
-			for i in range(len(test_data_list[timeSlot_key])):
-				X[i,:]=np.array(test_data_list[timeSlot_key][i].vector[0])
+			X=np.zeros((colum_num,v_len+1))
+			d_len=len(test_data_list[timeSlot_key])
+			for i in range(d_len):
+				X[colum_num-d_len+i,:]=np.array(test_data_list[timeSlot_key][i].vector[0])
+				# ipdb.set_trace()
 			test_data_X[timeSlot_key]=X
-			# ipdb.set_trace()
-			# ipdb.set_trace()
+		# ipdb.set_trace()
 		return test_data_X
 			
 
@@ -277,21 +538,31 @@ class time_traj_to_vector():
 		self.travel_time  		= float(traj_info[-1]) # travel time
 		self.link_travel_t={}
 		self.link_start_t={}
+		self.link_time_diff={}
 		self.vector =None
 		for l_id in self.link_ids:
 			self.link_travel_t[l_id]=0
-			self.link_start_t[l_id]=datetime(2015,1,1,0,0,0)
+			self.link_start_t[l_id]=datetime(2017,1,1,0,0,0)
+			self.link_time_diff[l_id]=0
 		link_seq= traj_info[4].split(';')
+		self.used_link_st_time=[]
+		self.used_link_ids=[]
 		for link in link_seq:
 			info = link.split('#')
 			self.link_travel_t[info[0]]=float(info[2])
 			self.link_start_t[info[0]]=datetime.strptime(info[1], "%Y-%m-%d %H:%M:%S")
+			self.used_link_st_time.append(self.link_start_t[info[0]])
+			self.used_link_ids.append(info[0])
+		self.used_link_st_time.sort()
+		# ipdb.set_trace()
 		self.vector=self.to_vector()
 	def link_to_vector(self):
+		min_link_start_time=self.used_link_st_time[0]
 		ids =self.link_travel_t.keys()
 		ids.sort()
 		link_tt_v=[]
 		link_st_v=[]
+		link_time_diff=[]
 		for l_id in ids:
 			link_tt_v.append(self.link_travel_t[l_id])
 			if self.link_start_t[l_id] is not None:
@@ -303,16 +574,25 @@ class time_traj_to_vector():
 				minute=0
 				second=0
 			link_st_v+=[hour,minute,second]
-		vector=link_tt_v+link_st_v
+			if l_id in self.used_link_ids:
+				t_diff=self.link_start_t[l_id] - min_link_start_time
+				link_time_diff+=[t_diff.seconds]
+			else:
+				link_time_diff+=[0]
+
+		vector=link_tt_v+link_st_v#+link_time_diff
 		return vector
 
 	def to_vector(self):
 		if self.vector is not None:
 			return self.vector
 		# ipdb.set_trace()
+		# self.vector=[one_hot(self.intersecID_to_int(self.intersection_id),4)+one_hot(int(self.tollgate_id),4)
+		# 			+one_hot(self.trace_start_time.weekday()+1,9)+one_hot(self.trace_start_time.hour+1,25)
+		# 			+one_hot(self.trace_start_time.minute+1,61)+[self.trace_start_time.second]+[self.travel_time]+self.link_to_vector()]
 		self.vector=[one_hot(self.intersecID_to_int(self.intersection_id),4)+one_hot(int(self.tollgate_id),4)
-					+one_hot(self.trace_start_time.weekday()+1,9)+one_hot(self.trace_start_time.hour+1,25)
-					+one_hot(self.trace_start_time.minute+1,61)+[self.travel_time]+self.link_to_vector()]
+					+one_hot(self.trace_start_time.weekday()+1,9)+[self.trace_start_time.hour+1]
+					+[self.trace_start_time.minute+1]+[self.trace_start_time.second]+[self.travel_time]+self.link_to_vector()]
 		return self.vector
 	def intersecID_to_int(self,intersec_id):
 		if intersec_id=='A':
@@ -854,6 +1134,14 @@ class kdd_data():
 			# ipdb.set_trace()
 
 		return travel_times
+	def get_traj_raw_records_train(self,r_id):
+		time_file = path+'trajectories(table 5)_training'+file_suffix
+		vol_file =path+'volume(table 6)_training'+file_suffix
+		road_link_file=path+'links (table 3)'+file_suffix 
+		weather_file =path +'weather (table 7)_training_update'+file_suffix
+		traj_data,vol_data,link_ids_data,weather_records=self.load_data(time_file,vol_file,road_link_file,weather_file)
+		self.link_ids=self.parse_road_link_ids(link_ids_data)
+		return traj_data, self.link_ids
 
 	def get_traj_record_based_train_data(self,r_id='B-3',
 										remove_holiday_data=True,
@@ -883,6 +1171,23 @@ class kdd_data():
 		RBTD=record_based_traj_data(self.traj_test1_data,self.link_ids)
 		X=RBTD.generate_test_data(r_id)
 		return X
+	def get_traj_record_based_train_generetor(self,r_id='B-3',
+										remove_holiday_data=True,
+										time_slots_for_sample_weights=
+										((time(8,0),time(10,0)),(time(17,0),time(19,0)))):
+		time_file = path+'trajectories(table 5)_training'+file_suffix
+		vol_file =path+'volume(table 6)_training'+file_suffix
+		road_link_file=path+'links (table 3)'+file_suffix 
+		weather_file =path +'weather (table 7)_training_update'+file_suffix
+		traj_data,vol_data,link_ids_data,weather_records=self.load_data(time_file,vol_file,road_link_file,weather_file)
+		self.link_ids=self.parse_road_link_ids(link_ids_data)
+		RBTD=record_based_traj_data(traj_data,self.link_ids)
+		RBTD.set_train_generator(r_id,time_slots_for_sample_weights=time_slots_for_sample_weights, \
+								remove_holiday_data=remove_holiday_data,y_interval=20,p_hours=2)
+		return RBTD.train_generator
+
+
+
 
 # clf.score(X_train,Y_train)
 # autor=autosklearn.regression.AutoSklearnRegressor()
