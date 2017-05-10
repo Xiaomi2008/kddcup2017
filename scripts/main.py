@@ -55,9 +55,11 @@ deep_models['simple_inception']=kdd_deep_models.kdd_model_inception
 deep_models['simple_gate']=kdd_deep_models.kdd_model_simple_gated
 deep_models['simple_gate_condition']=kdd_deep_models.kdd_model_simple_gated_condition_prob
 deep_models['simple_gate_deep_narrow']=kdd_deep_models.kdd_model_simple_gated_deep_narrow
+deep_models['simple_4l_gate_cnn']=kdd_deep_models.kdd_model_4layer_simple_gated
 deep_models['LSTM_1']=kdd_deep_models.kdd_LSTM_1
 deep_models['LSTM_2']=kdd_deep_models.kdd_LSTM_2
 deep_models['LSTM_2_bidirection']=kdd_deep_models.kdd_LSTM_bidirection
+deep_models['gate_conv_bu2tp']=kdd_deep_models.kdd_gated_model_tp2up
 deep_models['default_model']=deep_models['gated_cnn_1']
 deep_models['simple_gate_conv_LSTM']=kdd_deep_models.kdd_model_simple_gated_conv_LSMT
 deep_models['GBM']='GBM'
@@ -66,13 +68,19 @@ def get_model_and_weightFile(args):
 	model = deep_models[args.model]
 	# print (args)
 	phase =args.phase
-	model_save_file ='time_record_based_'+args.model +'_'+args.route_id +'_' +'I'+str(args.interval) +'_T'+str(args.given_time)+'_P'+str(args.y_interval)
+	if args.use_all_routes:
+		route_id_names ='all_routes'
+	else:
+		route_id_names =args.route_id
+	# ipdb.set_trace()
+	model_save_file ='time_record_based_'+args.model +'_'+route_id_names +'_' +'I'+str(args.interval) +'_T'+str(args.given_time)+'_P'+str(args.y_interval)
 	combined_routeID_features =''
 	if hasattr(args,'clist'):
 		for r_id in args.clist:
 			combined_routeID_features='-'+combined_routeID_features +r_id
 		combined_routeID_features='_CombineF'+'__'+combined_routeID_features +'__'
 	if args.remove_holiday:
+		# ipdb.set_trace()
 		model_save_file+='_No_holiday_data_'
 		# ipdb.set_trace()
 	if args.sample_weight:
@@ -268,14 +276,15 @@ def train_ensemble_deep_model_with_generator(args,model_save_file=None,model_cre
 	y_interval =20
 	data_dim =3 if 'LSTM' in args.model and 'conv' not in args.model else 4
 	print('data dim ={}').format(data_dim)
-	traj_records,link_ids=kdd_DATA.get_traj_raw_records_train(args.route_id)
-	RBTD=kdd_data.record_based_traj_data(traj_records,link_ids)
+	traj_records,link_ids,weath_records=kdd_DATA.get_traj_raw_records_train(args.route_id)
+	RBTD=kdd_data.record_based_traj_data(traj_records,link_ids,weath_records)
 	time_slots_for_sample_weights=((time(8,0),time(10,0)),(time(17,0),time(19,0)))
-	RBTD.set_train_generator(args.route_id,predict_all_routes=False,
+	RBTD.set_train_generator(args.route_id,predict_all_routes=args.use_all_routes,
 							time_slots_for_sample_weights=time_slots_for_sample_weights,
 							y_interval=y_interval,p_hours=args.given_time,
 							data_dim=data_dim)
 	input_shape=RBTD.get_train_data_shape()
+	
 	if args.use_all_routes:
 		output_shape=(60*2/y_interval*6,)
 	else:
@@ -283,16 +292,19 @@ def train_ensemble_deep_model_with_generator(args,model_save_file=None,model_cre
 	# ipdb.set_trace()
 	# output_shape=(60*2/y_interval*6,)
 	for i in range(num_models):
+		RBTD.train_val_partition(part_ratio=0.2,rand_seed=i)
+		# RBTD.generator(RBTD.train_list)
+		
+
 		ip,out=model_create_Func(input_shape,output_shape,1)
 		model=Model(ip,out)
 		optimizer =Adam(lr=0.001, beta_1=0.9, beta_2=0.999, epsilon=1e-08, decay=0.00001)
 		model.compile(optimizer=optimizer, loss=mape_exclude_zero_loss, metrics=[mape_exclude_zero_loss])#[metrics.mape])
 		model.summary()
 		
-		early_stop =EarlyStopping(monitor='val_loss', min_delta=0, patience=30, verbose=0, mode='auto')
+		early_stop =EarlyStopping(monitor='val_loss', min_delta=0, patience=100, verbose=0, mode='auto')
 		tensorboard= TensorBoard(log_dir='./logs',histogram_freq=0,write_graph=True,write_images=False)
 		weight_file='./weight/'+model_save_file[:-3]+'_s'+str(i)+'.h5'
-		RBTD.train_val_partition(part_ratio=0.2,rand_seed=i)
 		if os.path.isfile(weight_file):
 			try:
 				model.load_weights(weight_file)
@@ -300,7 +312,8 @@ def train_ensemble_deep_model_with_generator(args,model_save_file=None,model_cre
 				print ('the model {} can not  be loaded'.format(weight_file))
 				pass
 		best_model = ModelCheckpoint(weight_file, verbose = 1, save_best_only = True)
-		history=model.fit_generator(RBTD.generator(RBTD.train_list), steps_per_epoch = 100,epochs =60,
+		# RBTD.generator(RBTD.train_list)
+		history=model.fit_generator(RBTD.generator(RBTD.train_list), steps_per_epoch = 100,epochs =200,
 								validation_data=RBTD.generator(RBTD.val_list,yield_weight=False,rand_seed=5,phase='validation'),
 	 							verbose=1 ,workers=1, validation_steps=5,
 								callbacks = [tensorboard,best_model,early_stop])
@@ -480,16 +493,20 @@ def write_submit_traj_file(predict_result):
 			p_tts=predict_result[route_id][time_window_start]
 			p_start_time = time_window_start +timedelta(hours=2)
 			p_end_time = p_start_time + timedelta(minutes=20)
-			p_ave_time = p_tts[0,0]
+			# ipdb.set_trace()
 			for i in range(6):
+				try:
+					p_ave_time = p_tts[0,0+i]
+				except:
+					p_ave_time = p_tts[0+i]
 				out_line=','.join(['"' + route_id.split('-')[0] + '"', '"' + route_id.split('-')[1] + '"',
                                  '"[' + str(p_start_time) + ',' + str(p_end_time) + ')"',
                                  '"' + str(p_ave_time) + '"']) + '\n'
 				fw.writelines(out_line)
 				p_start_time += timedelta(minutes=20)
 				p_end_time = p_start_time + timedelta(minutes=20)
-				if i<5:
-					p_ave_time = p_tts[0,i+1]
+				# if i<5:
+				# 	p_ave_time = p_tts[0,i+1]
 	fw.close()
 def partition_train_val(X,Y,weights=None,valid_on_high_weight=False,seed=0):
 	ratio =0.1
@@ -544,10 +561,11 @@ if __name__ == "__main__":
 	parser.add_argument("-m","--model", help="select a deep model",default='default_model')
 	parser.add_argument("-t","--given_time",help="preceeding data time length (in hour)",type=float,default =2)
 	parser.add_argument("-yi","--y_interval",help="predicting interval_minutes",type=int,default=20)
-	parser.add_argument("-d","--remove_holiday",help="wheather to remove holiday data",type=bool,default=True)
 	parser.add_argument("-w","--sample_weight",help="apply sample weight on test time",type=bool,default=True)
 	parser.add_argument('-a','--use_all_routes',help="train a single model for all routes",type=bool,default=False)
+	parser.add_argument('-d','--remove_holiday',help="wheather to remove holiday data", type=bool, default=False)
 	args=parser.parse_args()
+	# ipdb.set_trace()
 	combined_feature_list =[]
 	print (args)
 	phase =args.phase
@@ -596,41 +614,67 @@ if __name__ == "__main__":
 
 	#------------------------- test all routes ------------------------------------
 	
-	route_ids=['A-2','A-3','C-1','C-3','B-1','B-3']
+	route_ids=['A-2','A-3','B-1','B-3','C-1','C-3']
 	# route_ids=['C-1','C-3','B-1','B-3','A-3']
 	if args.route_id is not None:
 		route_ids=[args.route_id]
 	# route_ids=['A-2']
 	print(route_ids)
 	if phase =='test':
-		predict_result ={}
-		num_out_put =[6]
-		# model_create_Func,weight_file=get_model_and_weightFile(args)
-		for route_id in route_ids:
-			print ('current_r_id ={}'.format(route_id))
-			args.route_id =route_id
+		if not args.use_all_routes:
+			predict_result ={}
+			num_out_put =[6]
+			# model_create_Func,weight_file=get_model_and_weightFile(args)
+			for route_id in route_ids:
+				print ('current_r_id ={}'.format(route_id))
+				args.route_id =route_id
+				model_create_Func,weight_file=get_model_and_weightFile(args)
+				print(weight_file)
+				predict_result[route_id]={}
+				X_time_dict=kdd_DATA.get_traj_record_based_test_data(route_id)
+				time_slots=list(X_time_dict.keys())
+				time_slots.sort()
+				T_X=[]
+				for time_slot in time_slots:
+					h,w=X_time_dict[time_slot].shape
+					# ipdb.set_trace()
+					T_X.append(np.reshape(X_time_dict[time_slot],(1,h,w,1)))
+				A=predict_ensemble_deep_model_on_diff_sample(T_X,num_out_put,
+				 											model_save_file=weight_file,
+				 											model_create_Func=model_create_Func,
+				 											num_models=20)
+				for i, time_slot in enumerate(time_slots):
+					predict_result[route_id][time_slot]=A[i]
+		else:
+			predict_result ={}
+			num_out_put =[36]
 			model_create_Func,weight_file=get_model_and_weightFile(args)
 			print(weight_file)
-			predict_result[route_id]={}
-			X_time_dict=kdd_DATA.get_traj_record_based_test_data(route_id)
+
+			for r_id in route_ids:
+				predict_result[r_id]={}
+			
+			X_time_dict=kdd_DATA.get_traj_record_based_test_data(None)
 			time_slots=list(X_time_dict.keys())
 			time_slots.sort()
 			T_X=[]
 			for time_slot in time_slots:
 				h,w=X_time_dict[time_slot].shape
-				# ipdb.set_trace()
+					# ipdb.set_trace()
 				T_X.append(np.reshape(X_time_dict[time_slot],(1,h,w,1)))
-				# ipdb.set_trace()
-			# A=model_predict(T_X,num_out_put,
-			# 											model_weight_file=weight_file,
-			# 											model_create_Func=model_create_Func)
 			A=predict_ensemble_deep_model_on_diff_sample(T_X,num_out_put,
-			 											model_save_file=weight_file,
-			 											model_create_Func=model_create_Func,
-			 											num_models=20)
+				 										model_save_file=weight_file,
+				 										model_create_Func=model_create_Func,
+				 										num_models=1)
+			# ipdb.set_trace()
 			for i, time_slot in enumerate(time_slots):
-				predict_result[route_id][time_slot]=A[i]
+				for idx, r_id in  enumerate(route_ids):
+					D=A[i][0][idx*6:(idx+1)*6]
+					predict_result[r_id][time_slot]=D
+					# ipdb.set_trace()
+		# ipdb.set_trace()
 		write_submit_traj_file(predict_result)
+
 
 		# # route_id='A-3'
 		# test_combine_features={}
