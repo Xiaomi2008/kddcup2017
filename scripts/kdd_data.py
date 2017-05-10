@@ -12,6 +12,8 @@ import random
 # import time
 from datetime import datetime, date, time
 import progressbar
+import matplotlib.pyplot as plt
+import math
 file_suffix = '.csv'
 path = '../../kdd_cup_data/dataSets/training/'  # set the data directory
 test_path ='../../kdd_cup_data/dataSets/testing_phase1/'
@@ -225,8 +227,8 @@ class record_based_traj_data():
 				r_id_count =0
 				count_record =0
 
-				backward search
-				if phase=='validation':
+				# backward search
+				# if phase=='validation':
 				while idx-n_pos>=0:
 						cur_time =traj_routeID_time_list[idx-n_pos].trace_start_time
 						cur_record_obj=traj_routeID_time_list[idx-n_pos]
@@ -248,7 +250,7 @@ class record_based_traj_data():
 						n_pos+=1
 				each_X.reverse()	
 
-				forward search
+				# forward search
 				pos=0
 				while idx+pos<len(traj_routeID_time_list):
 					cur_time =traj_routeID_time_list[idx+pos].trace_start_time
@@ -518,6 +520,97 @@ class record_based_traj_data():
 			test_data_X[timeSlot_key]=X
 		# ipdb.set_trace()
 		return test_data_X
+class links_to_image_convertor():
+	def __init__(self,link_seq_ids,route_id,time_col,start_time,end_time):
+		self.route_id =route_id
+		self.start_time =start_time
+		self.end_time   =end_time
+		self.num_ch =2
+		self.time_col=time_col
+		self.ink_seq_ids=link_seq_ids
+		len_link=len(link_seq_ids)
+		self.time_interval_second=(end_time-start_time).seconds/float(time_col)
+		self.channels =[]
+		for c in range(self.num_ch):
+			link_raw_container ={}
+			for link in link_seq_ids:
+				link_raw_container[link]=[[] for c in range(time_col)]
+			self.channels.append(link_raw_container)
+		# ipdb.set_trace()
+	def compute_col_idx(self,link_enter_time):
+		# if self.start_time<=link_enter_time <=self.end_time:
+		idx=math.floor((link_enter_time-self.start_time).seconds/float(self.time_interval_second))
+		idx =idx if self.start_time<=link_enter_time <=self.end_time else -1
+		return  idx
+	def fill_record(self,time_traj_to_vector_obj):
+		if time_traj_to_vector_obj.route_id !=self.route_id:
+			return
+		for link in time_traj_to_vector_obj.used_link_ids:
+			l_st=time_traj_to_vector_obj.link_start_t[link]
+			l_tt=time_traj_to_vector_obj.link_travel_t[link]
+			col_idx=int(self.compute_col_idx(l_st))
+			if col_idx ==-1:
+				continue
+			else:
+				self.channels[0][link][col_idx].append(l_tt)
+				self.channels[1][link][col_idx].append(l_st)
+			# except:
+				# ipdb.set_trace()
+	def to_image(self):
+		row=len(self.channels[0])
+		col=self.time_col
+		im_list =[]
+		for i in range(3):
+			im_list.append(np.zeros((row,col)))
+		for i,link in enumerate(self.ink_seq_ids):
+			row_mean_tt_list	=[0 if len(self.channels[0][link][col_idx])==0 else np.mean(self.channels[0][link][col_idx]) for col_idx in range(self.time_col)]
+			row_count_tt_list	=[len(self.channels[0][link][col_idx]) for col_idx in range(self.time_col)]
+			row_std_tt_list		=[0 if len(self.channels[0][link][col_idx])==0 else np.std(self.channels[0][link][col_idx]) for col_idx in range(self.time_col)]
+			im_list[0][i]		=np.array(row_mean_tt_list)
+			im_list[1][i]		=np.array(row_count_tt_list)
+			im_list[2][i]		=np.array(row_std_tt_list)
+		return im_list
+class test_links_to_image_convertor():
+	def __init__(self):
+		r_id ='B-1'
+		link_seq={}
+		link_seq['C-1']=['115','102','109','104','112','111','103','116','101','121','106','113']
+		link_seq['B-1']=['105','100','111','103','116','101','121','106','113']
+
+		start_time=datetime(2016,10,5,9,0,0)
+		end_time=start_time+timedelta(hours=2)
+		l_im_obj=links_to_image_convertor(link_seq[r_id],r_id,30,start_time,end_time)
+		kd_obj=kdd_data()
+		traj_records,link_ids,weath_records=kd_obj.get_traj_raw_records_train(r_id)
+		RRBTD=record_based_traj_data(traj_records,link_ids,weath_records)
+		for rd in RRBTD.traj_time_list:
+			if rd.trace_start_time >=start_time and rd.trace_start_time <=end_time:
+				l_im_obj.fill_record(rd)
+		im_list=l_im_obj.to_image()
+		fig, ax = plt.subplots(3)
+		ax[0].imshow(im_list[0])
+		ax[1].imshow(im_list[1])
+		ax[2].imshow(im_list[2])
+		# ipdb.set_trace()
+		plt.show()
+
+
+
+
+
+
+
+
+
+class temperal_spatial_traj_data(record_based_traj_data):
+	def __init__(self,traj_records,link_ids,weather_records):
+		super(temperal_spatial_traj_data,self).__init__(traj_records,link_ids,weather_records)
+
+	def generator(self,traj_obj_list,yield_weight =True,rand_seed=None,phase='train'):
+		pass
+
+
+
 			
 
 # trace_start_time = each_traj[3]
@@ -600,9 +693,10 @@ class time_traj_to_vector():
 		# self.vector=[one_hot(self.intersecID_to_int(self.intersection_id),4)+one_hot(int(self.tollgate_id),4)
 		# 			+one_hot(self.trace_start_time.weekday()+1,9)+one_hot(self.trace_start_time.hour+1,25)
 		# 			+one_hot(self.trace_start_time.minute+1,61)+[self.trace_start_time.second]+[self.travel_time]+self.link_to_vector()]
-		rand_time=random.randint(0,5)
-		rand_time =rand_time if random.randint(0,1)==0 else -1*rand_time
-		rand_time = rand_time if add_rand_to_travel_time else 0
+		# rand_time=random.randint(0,5)
+		# rand_time =rand_time if random.randint(0,1)==0 else -1*rand_time
+		# rand_time = rand_time if add_rand_to_travel_time else 0
+		rand_time=0
 		self.vector=[[self.travel_time+rand_time]+one_hot(self.intersecID_to_int(self.intersection_id),4)+one_hot(int(self.tollgate_id),4)
 					+one_hot(self.trace_start_time.weekday()+1,9)+[(self.trace_start_time.hour+1)]
 					+[(self.trace_start_time.minute+1)]+[(self.trace_start_time.second+1)]+self.link_to_vector()
@@ -1195,6 +1289,10 @@ class kdd_data():
 								remove_holiday_data=remove_holiday_data,y_interval=20,p_hours=2)
 		return RBTD.train_generator
 
+
+
+if __name__ == "__main__":
+	ls=test_links_to_image_convertor()
 
 
 
